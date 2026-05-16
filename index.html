@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no"/>
+  <title>Diario Serale</title>
+
+  <!-- PWA -->
+  <link rel="manifest" href="manifest.webmanifest"/>
+  <meta name="theme-color" content="#1A1814"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+  <meta name="apple-mobile-web-app-title" content="Diario"/>
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png"/>
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png"/>
+
+  <link rel="stylesheet" href="styles/hifi-c.css"/>
+  <style>
+    /* Install/install-instructions splash for non-installed first visit */
+    html, body { height: 100%; }
+    body { background: var(--paper, #FBF7EB); }
+    #install-card {
+      position: fixed; inset: 0;
+      background: linear-gradient(180deg, #1A1814, #2A2721);
+      color: #FBF7EB;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      padding: 24px;
+      z-index: 9999;
+      font-family: 'Inter', system-ui, sans-serif;
+      text-align: center;
+      gap: 14px;
+    }
+    #install-card.hidden { display: none; }
+    #install-card h2 {
+      font-family: 'Instrument Serif', Georgia, serif;
+      font-weight: 400; font-size: 36px; line-height: 1; margin: 0;
+    }
+    #install-card .eyebrow {
+      font-size: 11px; letter-spacing: 2px; color: #B5AC98; text-transform: uppercase;
+    }
+    #install-card .steps {
+      max-width: 320px;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 14px;
+      padding: 16px 18px;
+      text-align: left;
+      font-size: 14px; line-height: 1.5;
+    }
+    #install-card .steps b { color: #fff; }
+    #install-card .step { display: flex; gap: 10px; padding: 6px 0; }
+    #install-card .step .n {
+      flex-shrink: 0;
+      width: 22px; height: 22px; border-radius: 99px;
+      background: #FBF7EB; color: #1A1814;
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 700; font-size: 12px;
+    }
+    #install-card button {
+      background: #FBF7EB; color: #1A1814;
+      border: none; padding: 11px 22px; border-radius: 99px;
+      font-family: inherit; font-weight: 600; font-size: 14px;
+      cursor: pointer;
+    }
+    #install-card .skip {
+      background: transparent; color: #B5AC98;
+      text-decoration: underline; font-size: 13px;
+      padding: 4px 8px;
+    }
+    #install-card svg { color: #FBF7EB; }
+  </style>
+
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+</head>
+<body>
+  <!-- Install instructions: shown only when NOT installed and on iPhone Safari -->
+  <div id="install-card" class="hidden">
+    <div class="eyebrow">App di Controllo</div>
+    <h2>Installa sul tuo<br/>iPhone</h2>
+    <div class="steps">
+      <div class="step"><span class="n">1</span><span>Tocca <b>Condividi</b> <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12M7 8l5-5 5 5M5 14v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5"/></svg> nella barra in basso di Safari.</span></div>
+      <div class="step"><span class="n">2</span><span>Scorri e scegli <b>"Aggiungi alla schermata Home"</b>.</span></div>
+      <div class="step"><span class="n">3</span><span>Apri <b>Diario</b> dalla schermata Home — funzionerà come un'app nativa.</span></div>
+    </div>
+    <button onclick="document.getElementById('install-card').classList.add('hidden'); localStorage.setItem('install-dismissed','1');">Ho capito</button>
+    <button class="skip" onclick="document.getElementById('install-card').classList.add('hidden');">Provala prima nel browser →</button>
+  </div>
+
+  <div id="root"></div>
+  <script type="text/babel" src="hifi-c/app.jsx"></script>
+
+  <script>
+    // Show install card on iPhone Safari, NOT installed, NOT dismissed before
+    (function () {
+      const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+      const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+      const dismissed = localStorage.getItem('install-dismissed') === '1';
+      const url = new URLSearchParams(location.search);
+      // Force-show with ?install=1 for testing
+      if ((isIOS && !isStandalone && !dismissed) || url.has('install')) {
+        document.getElementById('install-card').classList.remove('hidden');
+      }
+    })();
+
+    // Register service worker
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js').catch(() => {});
+      });
+    }
+  </script>
+</body>
+</html>

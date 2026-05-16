@@ -1,0 +1,17 @@
+{
+  "name": "Diario Serale — App di Controllo",
+  "short_name": "Diario",
+  "description": "Quattro domande, una verità. PAC, sigarette, alcol, gioco — sotto controllo.",
+  "start_url": "./index.html?pwa=1",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#FBF7EB",
+  "theme_color": "#1A1814",
+  "lang": "it",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
