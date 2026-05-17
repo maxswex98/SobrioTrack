@@ -1197,9 +1197,13 @@ function Onboarding({ go, setState }) {
           limits: { ...limits },
         }));
       }
-      // ask notification permission now
+      // ask notification permission, then register periodic background sync
       if ('Notification' in window && Notification.permission === 'default') {
-        Notification.requestPermission().catch(()=>{});
+        Notification.requestPermission().then((perm) => {
+          if (perm === 'granted') registerPeriodicSync();
+        }).catch(()=>{});
+      } else if ('Notification' in window && Notification.permission === 'granted') {
+        registerPeriodicSync();
       }
     } catch {}
     go('home');
@@ -1520,36 +1524,56 @@ function isPwaMode() {
   return false;
 }
 
-// Schedule a daily reminder via the Notifications API.
-// We can't truly schedule in the background on iOS Safari — we tick every minute
-// while the app is open and fire if it's 21:30 and we haven't notified yet today.
-function useDailyNotifier(time) {
+// Register Periodic Background Sync for daily checkin reminder (Android Chrome only)
+async function registerPeriodicSync() {
+  try {
+    if (!('serviceWorker' in navigator) || !('periodicSync' in ServiceWorkerRegistration.prototype)) return;
+    const reg = await navigator.serviceWorker.ready;
+    const status = await navigator.permissions.query({ name: 'periodic-background-sync' });
+    if (status.state !== 'granted') return;
+    await reg.periodicSync.register('daily-checkin', { minInterval: 12 * 60 * 60 * 1000 }); // ogni 12h
+  } catch {}
+}
+
+// Daily reminders at 20:00 and 22:00 via Notifications API.
+// Fires while the app is open (polling every minute). On Android Chrome PWA
+// the service worker's periodic sync can keep this alive in background too.
+const REMINDER_SLOTS = [
+  { h: 20, m: 0, key: 'notif-20', body: 'Il diario è aperto. Quattro domande — poi chiudi.' },
+  { h: 22, m: 0, key: 'notif-22', body: 'Ultimo avviso. Non chiudere la giornata senza un rapporto.' },
+];
+
+function useDailyNotifier() {
   React.useEffect(() => {
     if (!('Notification' in window)) return;
-    const t = (time || '21:30').split(':');
-    const targetH = parseInt(t[0], 10), targetM = parseInt(t[1], 10);
     const tick = () => {
       if (Notification.permission !== 'granted') return;
       const now = new Date();
       const today = now.toDateString();
-      const last = localStorage.getItem('last-reminder');
-      if (last === today) return;
-      // fire if past target time today
-      if (now.getHours() > targetH || (now.getHours() === targetH && now.getMinutes() >= targetM)) {
+      for (const slot of REMINDER_SLOTS) {
+        const storageKey = `last-${slot.key}`;
+        if (localStorage.getItem(storageKey) === today) continue;
+        const isPast = now.getHours() > slot.h || (now.getHours() === slot.h && now.getMinutes() >= slot.m);
+        if (!isPast) continue;
         try {
-          new Notification('Diario Serale', {
-            body: 'Quattro domande. Una verità. Apri il diario.',
-            tag: 'daily-checkin',
-            silent: false,
-          });
-          localStorage.setItem('last-reminder', today);
+          if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+            navigator.serviceWorker.controller.postMessage({
+              type: 'SHOW_NOTIFICATION',
+              title: 'SobrioTrack',
+              body: slot.body,
+              tag: slot.key,
+            });
+          } else {
+            new Notification('SobrioTrack', { body: slot.body, tag: slot.key, icon: './icons/icon-192.png' });
+          }
+          localStorage.setItem(storageKey, today);
         } catch {}
       }
     };
     tick();
     const id = setInterval(tick, 60_000);
     return () => clearInterval(id);
-  }, [time]);
+  }, []);
 }
 
 function App() {
@@ -1567,7 +1591,7 @@ function App() {
     try { localStorage.setItem('app-state', JSON.stringify(next)); } catch {}
     return next;
   });
-  useDailyNotifier('21:30');
+  useDailyNotifier();
   const screens = [
     ['home', 'Home'], ['onboarding','Onboarding'],
     ['checkin-intro', 'Rapporto · intro'],

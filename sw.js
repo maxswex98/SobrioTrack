@@ -1,5 +1,5 @@
 // Service worker — cache-first for app shell
-const CACHE = 'diario-serale-v6';
+const CACHE = 'diario-serale-v7';
 const ASSETS = [
   './',
   './index.html',
@@ -38,13 +38,59 @@ self.addEventListener('fetch', (e) => {
     caches.match(req).then((cached) => {
       if (cached) return cached;
       return fetch(req).then((res) => {
-        // Cache successful basic/cors responses
         if (res && (res.status === 200 || res.type === 'opaque')) {
           const clone = res.clone();
           caches.open(CACHE).then((c) => c.put(req, clone)).catch(() => {});
         }
         return res;
       }).catch(() => caches.match('./index.html'));
+    })
+  );
+});
+
+// Message from app → show notification from SW context (needed on some browsers)
+self.addEventListener('message', (e) => {
+  if (e.data && e.data.type === 'SHOW_NOTIFICATION') {
+    self.registration.showNotification(e.data.title || 'SobrioTrack', {
+      body: e.data.body,
+      tag: e.data.tag,
+      icon: './icons/icon-192.png',
+      badge: './icons/icon-192.png',
+    });
+  }
+});
+
+// Periodic Background Sync — fires on Android Chrome even when app is closed
+self.addEventListener('periodicsync', (e) => {
+  if (e.tag !== 'daily-checkin') return;
+  e.waitUntil((async () => {
+    const now = new Date();
+    const h = now.getHours();
+    // Fire only in the 20:00–23:59 window (sync interval is ~1 day)
+    if (h < 20) return;
+    const clients = await self.clients.matchAll();
+    // Don't notify if app is in foreground (the in-app polling handles it)
+    if (clients.some(c => c.visibilityState === 'visible')) return;
+    await self.registration.showNotification('SobrioTrack', {
+      body: h < 22 ? 'Il diario è aperto. Quattro domande — poi chiudi.' : 'Ultimo avviso. Non chiudere la giornata senza un rapporto.',
+      tag: 'daily-checkin',
+      icon: './icons/icon-192.png',
+      badge: './icons/icon-192.png',
+    });
+  })());
+});
+
+// Tap on notification → open the app
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  e.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
+      for (const c of list) {
+        if (c.url.includes('index.html') || c.url.includes('SobrioTrack')) {
+          return c.focus();
+        }
+      }
+      return self.clients.openWindow('./index.html');
     })
   );
 });
