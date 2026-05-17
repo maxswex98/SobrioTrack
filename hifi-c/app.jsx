@@ -848,7 +848,10 @@ function Stats({ go, state }) {
             <div className="serif-it" style={{fontSize:16, color:'var(--ink-mute)', marginTop:14, lineHeight:1.5}}>
               La storia si scrive una sera alla volta. Fai il primo check-in stasera.
             </div>
-            <button onClick={() => go('checkin-intro')} className="btn btn-primary" style={{marginTop:24, padding:'12px 22px', fontFamily:'Instrument Serif', fontSize:16}}>apri il diario →</button>
+            {new Date().getHours() >= 19
+              ? <button onClick={() => go('checkin-intro')} className="btn btn-primary" style={{marginTop:24, padding:'12px 22px', fontFamily:'Instrument Serif', fontSize:16}}>apri il diario →</button>
+              : <div className="annot" style={{marginTop:20, fontSize:14}}>disponibile dalle 19:00</div>
+            }
           </div>
         ) : (
           <>
@@ -1399,36 +1402,98 @@ function StreakBadge({ Icon, color, bg, n }) {
   );
 }
 
-// ── ENTRY DETAIL (full read of today's diary) ──
-function EntryDetail({ go }) {
+// ── ENTRY DETAIL (navigable diary) ──
+function EntryDetail({ go, state }) {
+  const entries = (() => {
+    try { return JSON.parse(localStorage.getItem('entries') || '[]'); } catch { return []; }
+  })();
+  const [idx, setIdx] = useState(0); // 0 = most recent (entries stored newest-first)
+
+  const limits = (state && state.limits) || { smoke: 5, drink: 3, bet: 0 };
+  const dayNames = ['Domenica','Lunedì','Martedì','Mercoledì','Giovedì','Venerdì','Sabato'];
+  const monthNames = ['gennaio','febbraio','marzo','aprile','maggio','giugno','luglio','agosto','settembre','ottobre','novembre','dicembre'];
+  const isAfter19 = new Date().getHours() >= 19;
+  const todayKey = new Date().toISOString().slice(0, 10);
+
+  if (entries.length === 0) {
+    return (
+      <div className="screen-body screen-enter">
+        <TopBar go={go} back="home" title="Dettaglio"/>
+        <div style={{padding:'40px 24px', textAlign:'center'}}>
+          <div className="serif" style={{fontSize:24, lineHeight:1.2}}>Nessun rapporto<br/>ancora.</div>
+          <div className="serif-it" style={{fontSize:15, color:'var(--ink-mute)', marginTop:12}}>Fai il primo check-in stasera.</div>
+        </div>
+      </div>
+    );
+  }
+
+  const entry = entries[idx];
+  const d = new Date(entry.date + 'T12:00:00');
+  const dayLabel = `${d.getDate()} ${monthNames[d.getMonth()]}`;
+  const dowLabel = dayNames[d.getDay()].toUpperCase();
+
+  const overSmoke = (entry.smoke || 0) > limits.smoke;
+  const overDrink = (entry.drink || 0) > limits.drink;
+  const overBet   = (entry.bet   || 0) > limits.bet;
+  const allOk = !overSmoke && !overDrink && !overBet;
+  const isToday = entry.date === todayKey;
+
+  const canGoPrev = idx < entries.length - 1; // older entry
+  const canGoNext = idx > 0;                   // newer entry
+
+  const navBtn = (enabled) => ({
+    background: 'none', border: 'none', fontSize: 13, padding: 0,
+    color: enabled ? 'var(--ink-mute)' : 'var(--ink-faint)',
+    cursor: enabled ? 'pointer' : 'default',
+  });
+
   return (
     <div className="screen-body screen-enter">
-      <TopBar go={go} back="home" title="21 aprile"/>
+      <TopBar go={go} back="home" title={dayLabel}/>
       <div className="screen-scroll" style={{padding:'20px 28px 32px'}}>
-        <div className="kicker">MARTEDÌ · GIORNO 12</div>
+        <div className="kicker">{dowLabel}</div>
         <div className="serif" style={{fontSize:34, lineHeight:1.1, marginTop:4}}>
-          In linea.<br/>Hai tenuto.
+          {allOk ? <>In linea.<br/>Hai tenuto.</> : <>Sforato.<br/>Si fa meglio.</>}
         </div>
-        <div className="paper-lines" style={{marginTop:22, fontFamily:'Instrument Serif, serif', fontSize:20, lineHeight:'28px', color:'var(--ink-2)'}}>
-          <div>3 sigarette. Sotto il limite di 5.</div>
-          <div style={{fontStyle:'italic', color:'var(--ink-mute)'}}>Niente alcol. Niente gioco.</div>
-          <div style={{fontStyle:'italic', color:'var(--ink-mute)'}}>PAC di aprile: versato.</div>
-          <div>&nbsp;</div>
-          <div className="serif-it" style={{color:'var(--ink-mute)'}}>— rapporto chiuso, 21:51</div>
+
+        <div className="paper-lines" style={{marginTop:22, fontFamily:'Instrument Serif, serif', fontSize:19, lineHeight:'28px', color:'var(--ink-2)'}}>
+          <div style={{color: overSmoke ? 'var(--smoke)' : 'inherit'}}>
+            {entry.smoke} sigarett{entry.smoke===1?'a':'e'}. {overSmoke ? `oltre il limite di ${limits.smoke}.` : `nel limite (${limits.smoke}).`}
+          </div>
+          <div style={{fontStyle:'italic', color: overDrink ? 'var(--drink)' : 'var(--ink-mute)'}}>
+            {entry.drink === 0 ? 'niente alcol.' : `${entry.drink} unità di alcol.`}{overDrink ? ` oltre il limite.` : ''}
+          </div>
+          <div style={{fontStyle:'italic', color: overBet ? 'var(--bet)' : 'var(--ink-mute)'}}>
+            {entry.bet === 0 ? 'niente gioco.' : `${entry.bet} € di gioco.`}{overBet ? ` oltre il limite.` : ''}
+          </div>
+          <div style={{fontStyle:'italic', color:'var(--ink-mute)'}}>
+            PAC di {monthNames[d.getMonth()]}: {entry.pac ? 'versato.' : 'in sospeso.'}
+          </div>
         </div>
 
         <div style={{marginTop:22, padding:'16px 18px', background:'var(--paper-2)', borderRadius:16, border:'1px solid var(--paper-edge)'}}>
           <div className="kicker">SOMMARIO</div>
           <div style={{display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:10, marginTop:10}}>
-            <Stat v="3" l="fumate" c="var(--smoke)"/>
-            <Stat v="0" l="unità" c="var(--drink)"/>
-            <Stat v="0€" l="gioco" c="var(--bet)"/>
+            <Stat v={entry.smoke} l="fumate" c={overSmoke ? 'var(--smoke)' : 'var(--ink)'}/>
+            <Stat v={entry.drink} l="unità alcol" c={overDrink ? 'var(--drink)' : 'var(--ink)'}/>
+            <Stat v={`${entry.bet}€`} l="gioco" c={overBet ? 'var(--bet)' : 'var(--ink)'}/>
           </div>
         </div>
 
+        {isToday && isAfter19 && (
+          <button onClick={() => go('checkin-intro')} style={{
+            marginTop:18, width:'100%', padding:'12px 16px',
+            background:'transparent', border:'1.5px solid var(--paper-edge)',
+            borderRadius:14, fontSize:14, fontFamily:'Instrument Serif, serif',
+            color:'var(--ink-mute)', cursor:'pointer',
+          }}>
+            modifica il rapporto di oggi →
+          </button>
+        )}
+
         <div style={{marginTop:18, display:'flex', justifyContent:'space-between', alignItems:'center'}}>
-          <button onClick={() => go('home')} style={{background:'none', border:'none', fontSize:13, color:'var(--ink-mute)', cursor:'pointer', padding:0}}>← giorno prima</button>
-          <button style={{background:'none', border:'none', fontSize:13, color:'var(--ink-faint)', cursor:'not-allowed', padding:0}}>giorno dopo →</button>
+          <button onClick={() => canGoPrev && setIdx(idx + 1)} style={navBtn(canGoPrev)}>← giorno prima</button>
+          <button onClick={() => canGoNext && setIdx(idx - 1)} style={navBtn(canGoNext)}>giorno dopo →</button>
         </div>
       </div>
     </div>
@@ -1532,7 +1597,7 @@ function App() {
   else if (screen === 'stats') content = <Stats go={go} state={state}/>;
   else if (screen === 'settings') content = <Settings go={go} state={state} setState={setState}/>;
   else if (screen === 'widget') content = <Widget go={go} state={state}/>;
-  else if (screen === 'detail-entry') content = <EntryDetail go={go}/>;
+  else if (screen === 'detail-entry') content = <EntryDetail go={go} state={state}/>;
   else content = <Home go={go} state={state}/>;
 
   if (pwa) {
