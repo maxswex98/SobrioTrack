@@ -99,6 +99,8 @@ function Home({ go, state }) {
   const dowStr = dayNames[now.getDay()];
   const monthLabel = monthNames[now.getMonth()];
   const controlDays = state.controlDays || 0;
+  const isAfter19 = now.getHours() >= 19;
+  const timeStr = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
   return (
     <div className="screen-body screen-enter">
       <div className="screen-scroll">
@@ -148,8 +150,10 @@ function Home({ go, state }) {
               <I.Chev s={14} c="var(--ink-mute)"/>
             </div>
             <div className="paper-lines" style={{marginTop:8, paddingTop:2}}>
-              <div className="serif" style={{fontSize:19, lineHeight:'28px', color:'var(--ink-2)'}}>
-                {state.journalWritten ? `${state.today.smoke} sigarett${state.today.smoke===1?'a':'e'}.` : 'nessun rapporto ancora.'}
+              <div className="serif" style={{fontSize:18, lineHeight:'28px', color:'var(--ink-2)'}}>
+                {state.journalWritten
+                  ? `🚬 ${state.today.smoke}/${state.limits.smoke}  🍷 ${state.today.drink}/${state.limits.drink}  🎲 ${state.today.bet}€`
+                  : 'nessun rapporto ancora.'}
               </div>
               <div className="serif-it" style={{fontSize:16, color:'var(--ink-mute)', lineHeight:'28px'}}>
                 {state.journalWritten ? 'aggiornato stasera.' : 'apri il diario qui sotto.'}
@@ -160,7 +164,7 @@ function Home({ go, state }) {
           {/* Vizi streak rows */}
           <div style={{marginTop: 16, display:'flex', flexDirection:'column', gap: 8}}>
             <StreakRow Icon={I.Cig} label="Sigarette" val={`${state.today.smoke} / ${state.limits.smoke}`} days={state.streaks.smoke} color="var(--smoke)" bg="var(--smoke-bg)" under={state.today.smoke <= state.limits.smoke}/>
-            <StreakRow Icon={I.Glass} label="Alcol" val={`${state.today.drink} unità`} days={state.streaks.drink} color="var(--drink)" bg="var(--drink-bg)" under={state.today.drink <= state.limits.drink}/>
+            <StreakRow Icon={I.Glass} label="Alcol" val={`${state.today.drink} / ${state.limits.drink} unità`} days={state.streaks.drink} color="var(--drink)" bg="var(--drink-bg)" under={state.today.drink <= state.limits.drink}/>
             <StreakRow Icon={I.Dice} label="Gioco" val={`${state.today.bet} €`} days={state.streaks.bet} color="var(--bet)" bg="var(--bet-bg)" under={state.today.bet <= state.limits.bet}/>
           </div>
 
@@ -194,13 +198,13 @@ function Home({ go, state }) {
           </div>
 
           <button
-            onClick={() => go('checkin-intro')}
+            onClick={() => isAfter19 && go('checkin-intro')}
             className="btn btn-primary btn-block"
-            style={{marginTop: 22, padding: '18px 20px', fontSize: 16, fontFamily: 'Instrument Serif, serif', fontWeight: 400, letterSpacing: 0.3}}>
-            Apri il diario di stasera
+            style={{marginTop: 22, padding: '18px 20px', fontSize: 16, fontFamily: 'Instrument Serif, serif', fontWeight: 400, letterSpacing: 0.3, opacity: isAfter19 ? 1 : 0.45, cursor: isAfter19 ? 'pointer' : 'default'}}>
+            {!isAfter19 ? 'Diario disponibile dalle 19:00' : state.journalWritten ? 'Modifica il diario di stasera' : 'Apri il diario di stasera'}
           </button>
           <div className="annot" style={{textAlign:'center', marginTop:8, fontSize:14}}>
-            21:47 · ti aspetta
+            {!isAfter19 ? `ora è ${timeStr} · torna stasera` : state.journalWritten ? `${timeStr} · già compilato` : `${timeStr} · ti aspetta`}
           </div>
         </div>
       </div>
@@ -303,7 +307,7 @@ function CheckinStep({ go, step, state, setState }) {
       opts: makeIntOpts(state.limits.smoke), current: state.today.smoke,
       set: v => setState(s => ({...s, today:{...s.today, smoke:v}})) },
     { key:'drink', Icon: I.Glass, color:'var(--drink)', bg:'var(--drink-bg)',
-      q:'Unità di alcol?', limit: state.limits.drink, unit:'unità',
+      q:'Unità di alcol\nbevute oggi?', limit: state.limits.drink, unit:'unità',
       opts: makeIntOpts(state.limits.drink), current: state.today.drink,
       set: v => setState(s => ({...s, today:{...s.today, drink:v}})) },
     { key:'bet', Icon: I.Dice, color:'var(--bet)', bg:'var(--bet-bg)',
@@ -434,11 +438,12 @@ function CheckinDone({ go, state, setState }) {
     const dateKey = today.toISOString().slice(0,10);
     let entries = [];
     try { entries = JSON.parse(localStorage.getItem('entries') || '[]'); } catch {}
-    if (entries.find(e => e.date === dateKey)) return;
     const newEntry = { date: dateKey, smoke: snap.smoke, drink: snap.drink, bet: snap.bet, pac: snap.pac };
-    entries.unshift(newEntry);
+    const existingIdx = entries.findIndex(e => e.date === dateKey);
+    const isEdit = existingIdx >= 0;
+    if (isEdit) { entries[existingIdx] = newEntry; }
+    else { entries.unshift(newEntry); }
     try { localStorage.setItem('entries', JSON.stringify(entries.slice(0,365))); } catch {}
-    const monthKey = dateKey.slice(0, 7);
     setState(s => {
       // Add +200 only once per month when PAC is first confirmed
       const pacConfirmedNow = snap.pac && !s.pacMonthDone;
@@ -448,7 +453,7 @@ function CheckinDone({ go, state, setState }) {
       }
       return {
         ...s,
-        controlDays: (s.controlDays || 0) + 1,
+        controlDays: isEdit ? (s.controlDays || 0) : (s.controlDays || 0) + 1,
         journalWritten: true,
         journalDate: dateKey,
         pacThisMonth: snap.pac || s.pacThisMonth,
@@ -456,9 +461,9 @@ function CheckinDone({ go, state, setState }) {
         pacMonthDone: s.pacMonthDone || pacConfirmedNow,
         pacTotal: newPacTotal,
         streaks: {
-          smoke: s.today.smoke <= s.limits.smoke ? (s.streaks.smoke || 0) + 1 : 0,
-          drink: s.today.drink <= s.limits.drink ? (s.streaks.drink || 0) + 1 : 0,
-          bet: s.today.bet <= s.limits.bet ? (s.streaks.bet || 0) + 1 : 0,
+          smoke: snap.smoke <= s.limits.smoke ? (s.streaks.smoke || 0) + (isEdit ? 0 : 1) : 0,
+          drink: snap.drink <= s.limits.drink ? (s.streaks.drink || 0) + (isEdit ? 0 : 1) : 0,
+          bet: snap.bet <= s.limits.bet ? (s.streaks.bet || 0) + (isEdit ? 0 : 1) : 0,
         },
       };
     });
@@ -938,7 +943,7 @@ function Settings({ go, state, setState }) {
         <div className="label-tiny" style={{marginTop:20, marginBottom:8}}>I MIEI LIMITI</div>
         <Card>
           <SettingRow label="Fumo al massimo" val={`${state.limits.smoke} al giorno`} dot="var(--smoke)" onClick={() => openEdit('smoke','Sigarette al giorno', state.limits.smoke, '/giorno')}/>
-          <SettingRow label="Bevo al massimo" val={`${state.limits.drink} unità a settimana`} dot="var(--drink)" onClick={() => openEdit('drink','Unità alcol a settimana', state.limits.drink, '/sett')}/>
+          <SettingRow label="Bevo al massimo" val={`${state.limits.drink} unità al giorno`} dot="var(--drink)" onClick={() => openEdit('drink','Unità alcol al giorno', state.limits.drink, '/giorno')}/>
           <SettingRow label="Gioco d'azzardo" val={state.limits.bet === 0 ? 'mai.' : `${state.limits.bet} € / mese`} dot="var(--bet)" last onClick={() => openEdit('bet','Gioco € al mese', state.limits.bet, '€/mese')}/>
         </Card>
 
@@ -1279,7 +1284,7 @@ function Onboarding({ go, setState }) {
           <div style={{display:'flex', flexDirection:'column', gap:10}}>
             <LimitRow label="Sigarette / giorno" value={limits.smoke} min={0} max={20}
               set={(v)=>setLimits(l=>({...l, smoke:v}))} suffix=""/>
-            <LimitRow label="Alcol / settimana (unità)" value={limits.drink} min={0} max={14}
+            <LimitRow label="Alcol / giorno (unità)" value={limits.drink} min={0} max={14}
               set={(v)=>setLimits(l=>({...l, drink:v}))} suffix="u"/>
             <LimitRow label="Gioco d'azzardo / mese" value={limits.bet} min={0} max={500} step={10}
               set={(v)=>setLimits(l=>({...l, bet:v}))} suffix="€"/>
