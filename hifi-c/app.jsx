@@ -61,18 +61,21 @@ function loadInitial() {
     const limits = JSON.parse(localStorage.getItem('limits') || 'null') || { smoke: 5, drink: 3, bet: 0 };
     const saved = JSON.parse(localStorage.getItem('app-state') || 'null') || {};
     const todayKey = new Date().toISOString().slice(0, 10);
-    // If saved data is from a previous day, reset the daily fields
+    const monthKey = todayKey.slice(0, 7); // "2026-05"
     const isNewDay = saved.journalDate && saved.journalDate !== todayKey;
+    const isNewMonth = !saved.pacMonth || saved.pacMonth !== monthKey;
     // individual keys (written by onboarding/settings edit) win over older app-state snapshot
     return {
       pacThisMonth: false,
       pacChoice: null,
+      pacMonth: monthKey,
       streaks: { smoke: 0, drink: 0, bet: 0 },
       today: { smoke: 0, drink: 0, bet: 0 },
       journalWritten: false,
       controlDays: 0,
       ...saved,
-      ...(isNewDay ? { journalWritten: false, today: { smoke: 0, drink: 0, bet: 0 }, pacThisMonth: false, pacChoice: null } : {}),
+      ...(isNewDay ? { journalWritten: false, today: { smoke: 0, drink: 0, bet: 0 } } : {}),
+      ...(isNewMonth ? { pacThisMonth: false, pacChoice: null, pacMonth: monthKey, pacMonthDone: false } : {}),
       pacTotal, revolut, limits,
     };
   } catch {
@@ -309,8 +312,9 @@ function CheckinStep({ go, step, state, setState }) {
       set: v => setState(s => ({...s, today:{...s.today, bet:v}})) },
     { key:'pac', Icon: I.Coin, color:'var(--pac)', bg:'var(--pac-bg)',
       q:`PAC di ${currentMonth}.\n200 €.`, limit: null, unit:'',
-      opts:['✓ versato', 'saltato', 'dopo'], current: state.pacChoice,
-      set: v => setState(s => ({...s, pacThisMonth: v === '✓ versato', pacChoice: v})) },
+      opts:['✓ versato', 'saltato', 'dopo'], current: state.pacThisMonth ? '✓ versato' : state.pacChoice,
+      locked: state.pacThisMonth,
+      set: v => { if (!state.pacThisMonth) setState(s => ({...s, pacThisMonth: v === '✓ versato', pacChoice: v})); } },
   ];
   const cur = STEPS[step];
   const pct = ((step + 1) / 4) * 100;
@@ -346,11 +350,21 @@ function CheckinStep({ go, step, state, setState }) {
           </div>
         )}
 
+        {/* PAC già confermato questo mese */}
+        {cur.locked && (
+          <div style={{marginTop:16, padding:'10px 14px', background:'var(--pac-bg)', borderRadius:12, display:'flex', alignItems:'center', gap:8}}>
+            <I.Check s={14} c="var(--pac)"/>
+            <span className="mono" style={{fontSize:11, color:'var(--pac)', letterSpacing:'0.08em'}}>GIÀ CONFERMATO PER {currentMonth.toUpperCase()}</span>
+          </div>
+        )}
+
         {/* Options */}
         <div style={{
           display:'grid',
           gridTemplateColumns: cur.key === 'pac' ? '1fr' : 'repeat(3, 1fr)',
-          gap: 10, marginTop: 28,
+          gap: 10, marginTop: 20,
+          opacity: cur.locked ? 0.5 : 1,
+          pointerEvents: cur.locked ? 'none' : 'auto',
         }}>
           {cur.opts.map((n, i) => {
             const selected = cur.current === n;
@@ -424,17 +438,30 @@ function CheckinDone({ go, state, setState }) {
     const newEntry = { date: dateKey, smoke: snap.smoke, drink: snap.drink, bet: snap.bet, pac: snap.pac };
     entries.unshift(newEntry);
     try { localStorage.setItem('entries', JSON.stringify(entries.slice(0,365))); } catch {}
-    setState(s => ({
-      ...s,
-      controlDays: (s.controlDays || 0) + 1,
-      journalWritten: true,
-      journalDate: dateKey,
-      streaks: {
-        smoke: s.today.smoke <= s.limits.smoke ? (s.streaks.smoke || 0) + 1 : 0,
-        drink: s.today.drink <= s.limits.drink ? (s.streaks.drink || 0) + 1 : 0,
-        bet: s.today.bet <= s.limits.bet ? (s.streaks.bet || 0) + 1 : 0,
-      },
-    }));
+    const monthKey = dateKey.slice(0, 7);
+    setState(s => {
+      // Add +200 only once per month when PAC is first confirmed
+      const pacConfirmedNow = snap.pac && !s.pacMonthDone;
+      const newPacTotal = pacConfirmedNow ? (s.pacTotal || 0) + 200 : s.pacTotal;
+      if (pacConfirmedNow) {
+        try { localStorage.setItem('pac-total', String(newPacTotal)); } catch {}
+      }
+      return {
+        ...s,
+        controlDays: (s.controlDays || 0) + 1,
+        journalWritten: true,
+        journalDate: dateKey,
+        pacThisMonth: snap.pac || s.pacThisMonth,
+        pacChoice: snap.pac ? '✓ versato' : (s.pacThisMonth ? '✓ versato' : s.pacChoice),
+        pacMonthDone: s.pacMonthDone || pacConfirmedNow,
+        pacTotal: newPacTotal,
+        streaks: {
+          smoke: s.today.smoke <= s.limits.smoke ? (s.streaks.smoke || 0) + 1 : 0,
+          drink: s.today.drink <= s.limits.drink ? (s.streaks.drink || 0) + 1 : 0,
+          bet: s.today.bet <= s.limits.bet ? (s.streaks.bet || 0) + 1 : 0,
+        },
+      };
+    });
   }, []);
 
   if (anyOver) return <Sgarro go={go} state={state} setState={setState} snap={snap} overSmoke={overSmoke} overDrink={overDrink} overBet={overBet}/>;
@@ -534,9 +561,67 @@ function Sgarro({ go, overSmoke, overDrink, overBet, state, snap }) {
 }
 
 // ── SAVINGS DETAIL ──
+function AccountCard({ account, onDeposit }) {
+  const initial = (account.name || '?').charAt(0).toUpperCase();
+  const lastDep = account.deposits && account.deposits[0];
+  const lastDepText = lastDep
+    ? `ult. versamento ${new Date(lastDep.date).toLocaleDateString('it-IT', {day:'numeric', month:'short'})} · +${lastDep.amt} €`
+    : 'nessun versamento ancora';
+  return (
+    <div style={{background:'#fff', border:'1px solid var(--paper-edge)', borderRadius:18, padding:18, display:'flex', alignItems:'center', gap:14, marginBottom:8}}>
+      <div style={{width:44, height:44, borderRadius:12, background:'var(--ink)', color:'var(--paper)', display:'flex', alignItems:'center', justifyContent:'center', fontFamily:'Instrument Serif', fontWeight:400, fontSize:22}}>{initial}</div>
+      <div style={{flex:1, minWidth:0}}>
+        <div style={{fontSize:15, fontWeight:600}}>{account.name}</div>
+        <div style={{fontSize:12, color:'var(--ink-mute)', marginTop:2}}>{lastDepText}</div>
+      </div>
+      <div style={{display:'flex', flexDirection:'column', alignItems:'flex-end', gap:6}}>
+        <div className="serif" style={{fontSize:22}}>€ {(account.balance || 0).toLocaleString('it')}</div>
+        <button onClick={onDeposit} style={{fontSize:11, fontWeight:600, color:'var(--pac)', background:'var(--pac-bg)', border:'none', borderRadius:8, padding:'4px 10px', cursor:'pointer', fontFamily:'Inter'}}>+ versamento</button>
+      </div>
+    </div>
+  );
+}
+
+function AddAccountModal({ onCancel, onSave }) {
+  const [name, setName] = useState('');
+  const [balance, setBalance] = useState('');
+  const valid = name.trim().length >= 1 && !isNaN(parseFloat(balance)) && parseFloat(balance) >= 0;
+  return (
+    <div onClick={onCancel} style={{position:'fixed', inset:0, background:'rgba(20,16,10,0.55)', display:'flex', alignItems:'flex-end', justifyContent:'center', zIndex:200}}>
+      <div onClick={e => e.stopPropagation()} style={{width:'100%', maxWidth:420, background:'var(--paper)', borderRadius:'24px 24px 0 0', padding:'22px 22px 30px'}}>
+        <div style={{width:36, height:4, background:'var(--paper-edge)', borderRadius:4, margin:'0 auto 16px'}}/>
+        <div className="serif" style={{fontSize:22}}>Nuovo conto</div>
+        <div style={{marginTop:16, display:'flex', flexDirection:'column', gap:10}}>
+          <div style={{padding:'12px 14px', background:'#fff', border:'1px solid var(--paper-edge)', borderRadius:12}}>
+            <input autoFocus type="text" placeholder="Nome conto (es. Mediolanum)" value={name} onChange={e => setName(e.target.value)}
+              style={{width:'100%', fontSize:16, fontFamily:'inherit', border:'none', outline:'none', background:'transparent', color:'var(--ink)'}}/>
+          </div>
+          <div style={{display:'flex', alignItems:'baseline', gap:8, padding:'12px 14px', background:'#fff', border:'1px solid var(--paper-edge)', borderRadius:12}}>
+            <input type="number" inputMode="decimal" placeholder="Saldo attuale" value={balance} onChange={e => setBalance(e.target.value)}
+              style={{flex:1, fontSize:22, fontFamily:'Instrument Serif', border:'none', outline:'none', background:'transparent', color:'var(--ink)'}}/>
+            <span style={{fontSize:14, color:'var(--ink-mute)'}}>€</span>
+          </div>
+        </div>
+        <div style={{display:'flex', gap:10, marginTop:18}}>
+          <button onClick={onCancel} style={{flex:1, padding:'14px', background:'transparent', border:'1px solid var(--paper-edge)', borderRadius:14, fontFamily:'inherit', fontSize:14, color:'var(--ink)', cursor:'pointer'}}>annulla</button>
+          <button onClick={() => valid && onSave(name.trim(), parseFloat(balance))} style={{flex:2, padding:'14px', background: valid ? 'var(--ink)' : 'var(--paper-edge)', border:'none', borderRadius:14, fontFamily:'inherit', fontSize:14, color: valid ? 'var(--paper)' : 'var(--ink-mute)', fontWeight:600, cursor: valid ? 'pointer' : 'default'}}>aggiungi</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Savings({ go, state, setState }) {
-  const total = state.pacTotal + state.revolut;
   const [deposit, setDeposit] = useState(false);
+  const [extraAccounts, setExtraAccounts] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('extra-accounts') || '[]'); } catch { return []; }
+  });
+  const [showAddAccount, setShowAddAccount] = useState(false);
+  const [depositAccount, setDepositAccount] = useState(null); // account id
+
+  const extraTotal = extraAccounts.reduce((s, a) => s + (a.balance || 0), 0);
+  const total = state.pacTotal + state.revolut + extraTotal;
+
   const saveDeposit = (raw) => {
     const n = parseFloat(raw);
     if (isNaN(n) || n <= 0) { setDeposit(false); return; }
@@ -550,6 +635,28 @@ function Savings({ go, state, setState }) {
     setState(s => ({ ...s, revolut: next }));
     setDeposit(false);
   };
+
+  const saveExtraDeposit = (raw) => {
+    const n = parseFloat(raw);
+    if (isNaN(n) || n <= 0) { setDepositAccount(null); return; }
+    const updated = extraAccounts.map(a => {
+      if (a.id !== depositAccount) return a;
+      const deps = [{ amt: n, date: new Date().toISOString() }, ...(a.deposits || [])].slice(0, 30);
+      return { ...a, balance: (a.balance || 0) + n, deposits: deps };
+    });
+    setExtraAccounts(updated);
+    try { localStorage.setItem('extra-accounts', JSON.stringify(updated)); } catch {}
+    setDepositAccount(null);
+  };
+
+  const addAccount = (name, balance) => {
+    const newAcc = { id: Date.now(), name, balance, deposits: [] };
+    const updated = [...extraAccounts, newAcc];
+    setExtraAccounts(updated);
+    try { localStorage.setItem('extra-accounts', JSON.stringify(updated)); } catch {}
+    setShowAddAccount(false);
+  };
+
   let lastDep = null;
   try {
     const log = JSON.parse(localStorage.getItem('revolut-log') || '[]');
@@ -558,6 +665,12 @@ function Savings({ go, state, setState }) {
   const lastDepText = lastDep
     ? `ult. versamento ${new Date(lastDep.date).toLocaleDateString('it-IT', {day:'numeric', month:'short'})} · +${lastDep.amt} €`
     : 'nessun versamento ancora';
+
+  const monthNames = ['gennaio','febbraio','marzo','aprile','maggio','giugno','luglio','agosto','settembre','ottobre','novembre','dicembre'];
+  const now = new Date();
+  const currentMonthLabel = monthNames[now.getMonth()].toUpperCase();
+  const nextMonthLabel = monthNames[(now.getMonth() + 1) % 12].toUpperCase();
+
   return (
     <div className="screen-body screen-enter">
       <TopBar go={go} back="home" title="Risparmi"/>
@@ -579,30 +692,37 @@ function Savings({ go, state, setState }) {
               <div className="kicker" style={{color:'var(--pac)'}}>PAC · 200 €/MESE</div>
               <div className="serif" style={{fontSize:34, marginTop:2, lineHeight:1}}>€ {state.pacTotal.toLocaleString('it')}</div>
             </div>
-            <div className="chip" style={{background:'var(--pac)', color:'var(--paper)'}}>
-              <I.Check s={11}/> aprile
+            <div className="chip" style={{background: state.pacThisMonth ? 'var(--pac)' : 'var(--paper-edge)', color: state.pacThisMonth ? 'var(--paper)' : 'var(--ink-mute)'}}>
+              {state.pacThisMonth ? <><I.Check s={11}/> {currentMonthLabel}</> : <>{currentMonthLabel} · ?</>}
             </div>
           </div>
           <PacChart/>
           <div style={{display:'flex', justifyContent:'space-between', marginTop:2}}>
-            <span className="mono" style={{fontSize:10, color:'var(--ink-mute)'}}>DIC '24</span>
-            <span className="mono" style={{fontSize:10, color:'var(--ink-mute)'}}>PROSSIMO · 1 MAG</span>
+            <span className="mono" style={{fontSize:10, color:'var(--ink-mute)'}}>INIZIO</span>
+            <span className="mono" style={{fontSize:10, color:'var(--ink-mute)'}}>PROSSIMO · 1 {nextMonthLabel}</span>
           </div>
         </div>
 
         {/* Wallet */}
         <div className="label-tiny" style={{marginTop:16, marginBottom:8, paddingLeft:4}}>ALTRI CONTI</div>
-        <div style={{background:'#fff', border:'1px solid var(--paper-edge)', borderRadius:18, padding:18, display:'flex', alignItems:'center', gap:14}}>
+        <div style={{background:'#fff', border:'1px solid var(--paper-edge)', borderRadius:18, padding:18, display:'flex', alignItems:'center', gap:14, marginBottom:8}}>
           <div style={{width:44, height:44, borderRadius:12, background:'#1A1814', color:'#FBF7EB', display:'flex', alignItems:'center', justifyContent:'center', fontFamily:'Instrument Serif', fontWeight:400, fontSize:24}}>R</div>
           <div style={{flex:1}}>
             <div style={{fontSize:15, fontWeight:600}}>Revolut</div>
             <div style={{fontSize:12, color:'var(--ink-mute)', marginTop:2}}>{lastDepText}</div>
           </div>
-          <div className="serif" style={{fontSize:26}}>€ {state.revolut}</div>
+          <div style={{display:'flex', flexDirection:'column', alignItems:'flex-end', gap:6}}>
+            <div className="serif" style={{fontSize:22}}>€ {state.revolut}</div>
+            <button onClick={() => setDeposit(true)} style={{fontSize:11, fontWeight:600, color:'var(--pac)', background:'var(--pac-bg)', border:'none', borderRadius:8, padding:'4px 10px', cursor:'pointer', fontFamily:'Inter'}}>+ versamento</button>
+          </div>
         </div>
 
-        <button style={{
-          width:'100%', marginTop:10, padding:'14px 16px',
+        {extraAccounts.map(acc => (
+          <AccountCard key={acc.id} account={acc} onDeposit={() => setDepositAccount(acc.id)}/>
+        ))}
+
+        <button onClick={() => setShowAddAccount(true)} style={{
+          width:'100%', marginTop:4, padding:'14px 16px',
           background:'transparent', color:'var(--ink-mute)',
           border:'1.5px dashed var(--paper-edge)', borderRadius:18,
           display:'flex', alignItems:'center', justifyContent:'center', gap:8,
@@ -611,12 +731,9 @@ function Savings({ go, state, setState }) {
           <I.Plus s={16}/> aggiungi un altro conto
         </button>
 
-        <div style={{marginTop:20, display:'flex', gap:8}}>
-          <button onClick={() => setDeposit(true)} className="btn" style={{flex:1, background:'var(--pac-bg)', color:'var(--pac)', padding:'14px', fontSize:13, cursor:'pointer'}}>
-            <I.Plus s={14}/> versamento Revolut
-          </button>
-        </div>
         {deposit && <EditModal editing={{label:'Versamento Revolut', value:'', suffix:'€ (da aggiungere)'}} onCancel={() => setDeposit(false)} onSave={saveDeposit}/>}
+        {depositAccount && <EditModal editing={{label:`Versamento ${extraAccounts.find(a=>a.id===depositAccount)?.name||''}`, value:'', suffix:'€ (da aggiungere)'}} onCancel={() => setDepositAccount(null)} onSave={saveExtraDeposit}/>}
+        {showAddAccount && <AddAccountModal onCancel={() => setShowAddAccount(false)} onSave={addAccount}/>}
       </div>
       <TabBar go={go} active="savings"/>
     </div>
@@ -641,9 +758,81 @@ function PacChart() {
   );
 }
 
+// ── STATS helpers ──
+function MonthSummary({ monthKey, entries, limits }) {
+  const monthNames = ['gennaio','febbraio','marzo','aprile','maggio','giugno','luglio','agosto','settembre','ottobre','novembre','dicembre'];
+  const [y, m] = monthKey.split('-');
+  const label = `${monthNames[parseInt(m,10)-1].toUpperCase()} ${y}`;
+  const daysInMonth = new Date(parseInt(y), parseInt(m), 0).getDate();
+  const totalSmoke = entries.reduce((s,e) => s + (e.smoke||0), 0);
+  const totalDrink = entries.reduce((s,e) => s + (e.drink||0), 0);
+  const totalBet   = entries.reduce((s,e) => s + (e.bet||0), 0);
+  const pacDone    = entries.some(e => e.pac === true);
+  const avgSmoke   = entries.length ? (totalSmoke / entries.length).toFixed(1) : '—';
+
+  return (
+    <div style={{background:'var(--paper-2)', borderRadius:18, padding:18, marginBottom:12}}>
+      <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-start'}}>
+        <div className="kicker">{label}</div>
+        {pacDone && <div className="chip" style={{background:'var(--pac)', color:'var(--paper)', fontSize:10}}><I.Check s={10}/> PAC</div>}
+      </div>
+      <div style={{fontSize:13, color:'var(--ink-3)', marginTop:10, display:'grid', gridTemplateColumns:'1fr 1fr', gap:'8px 16px'}}>
+        <div><span style={{color:'var(--ink-mute)'}}>Giorni</span> <b>{entries.length}/{daysInMonth}</b></div>
+        <div><span style={{color:'var(--ink-mute)'}}>Fumate</span> <b style={{color: totalSmoke > limits.smoke * entries.length ? 'var(--smoke)' : 'inherit'}}>{totalSmoke}</b> <span style={{fontSize:11, color:'var(--ink-faint)'}}>({avgSmoke}/g)</span></div>
+        <div><span style={{color:'var(--ink-mute)'}}>Alcol</span> <b style={{color: totalDrink > limits.drink * 4 ? 'var(--drink)' : 'inherit'}}>{totalDrink} u.</b></div>
+        <div><span style={{color:'var(--ink-mute)'}}>Gioco</span> <b style={{color: totalBet > limits.bet ? 'var(--bet)' : 'inherit'}}>{limits.bet===0 && totalBet===0 ? '✓ zero' : `${totalBet}€`}</b></div>
+      </div>
+    </div>
+  );
+}
+
+function DayRow({ entry, limits, isLast }) {
+  const dayNames = ['dom','lun','mar','mer','gio','ven','sab'];
+  const d = new Date(entry.date + 'T12:00:00');
+  const dayLabel = `${d.getDate()} ${['gen','feb','mar','apr','mag','giu','lug','ago','set','ott','nov','dic'][d.getMonth()]}`;
+  const dow = dayNames[d.getDay()];
+  const smokeOver = (entry.smoke||0) > limits.smoke;
+  const drinkOver = (entry.drink||0) > limits.drink;
+  const betOver   = (entry.bet||0) > limits.bet;
+  const allOk = !smokeOver && !drinkOver && !betOver;
+
+  return (
+    <div style={{display:'flex', alignItems:'center', gap:12, padding:'12px 0', borderBottom: isLast ? 'none' : '1px solid var(--paper-edge)'}}>
+      <div style={{width:36, textAlign:'center', flexShrink:0}}>
+        <div style={{fontSize:10, color:'var(--ink-faint)', fontFamily:'JetBrains Mono', textTransform:'uppercase'}}>{dow}</div>
+        <div style={{fontSize:17, fontWeight:600, lineHeight:1.1}}>{d.getDate()}</div>
+      </div>
+      <div style={{flex:1, display:'flex', gap:8, flexWrap:'wrap', alignItems:'center'}}>
+        <span style={{fontSize:12, color: smokeOver ? 'var(--smoke)' : 'var(--ink-3)', fontWeight: smokeOver ? 600 : 400}}>🚬 {entry.smoke||0}</span>
+        <span style={{fontSize:12, color: drinkOver ? 'var(--drink)' : 'var(--ink-3)', fontWeight: drinkOver ? 600 : 400}}>🍷 {entry.drink||0}</span>
+        <span style={{fontSize:12, color: betOver ? 'var(--bet)' : 'var(--ink-3)', fontWeight: betOver ? 600 : 400}}>🎲 {entry.bet||0}€</span>
+        {entry.pac && <span style={{fontSize:11, color:'var(--pac)', fontWeight:600}}>PAC ✓</span>}
+      </div>
+      <div style={{fontSize:11, color: allOk ? 'var(--pac)' : 'var(--smoke)', fontWeight:600, textAlign:'right', minWidth:52}}>
+        {allOk ? 'in linea' : [smokeOver&&'fumo', drinkOver&&'alcol', betOver&&'gioco'].filter(Boolean).join(' ')}
+      </div>
+    </div>
+  );
+}
+
 // ── STATS ──
 function Stats({ go, state }) {
-  const empty = !state.journalWritten && (state.controlDays || 0) === 0;
+  const entries = (() => {
+    try { return JSON.parse(localStorage.getItem('entries') || '[]'); } catch { return []; }
+  })();
+
+  const limits = state.limits || { smoke: 5, drink: 3, bet: 0 };
+
+  // Group by month descending
+  const byMonth = {};
+  entries.forEach(e => {
+    const mk = e.date.slice(0, 7);
+    (byMonth[mk] = byMonth[mk] || []).push(e);
+  });
+  const months = Object.keys(byMonth).sort().reverse();
+
+  const empty = entries.length === 0;
+
   return (
     <div className="screen-body screen-enter">
       <TopBar go={go} back="home" title="Storia"/>
@@ -658,14 +847,18 @@ function Stats({ go, state }) {
           </div>
         ) : (
           <>
-            <div className="kicker" style={{marginTop:10}}>RIEPILOGO</div>
-            <div className="serif" style={{fontSize:30, lineHeight:1.1, marginTop:4}}>
-              {state.controlDays || 0} giorn{state.controlDays===1?'o':'i'} di controllo.
-            </div>
-            <div style={{background:'var(--pac-bg)', borderRadius:18, padding:18, marginTop:16}}>
-              <div className="kicker" style={{color:'var(--pac)'}}>RISPARMI ATTUALI</div>
-              <div className="serif" style={{fontSize:36, lineHeight:1, marginTop:2}}>€ {(state.pacTotal + state.revolut).toLocaleString('it')}</div>
-              <div style={{fontSize:12, color:'var(--ink-mute)', marginTop:4}}>PAC {state.pacTotal.toLocaleString('it')} · Revolut {state.revolut}</div>
+            {/* Riepilogo mensile */}
+            <div className="kicker" style={{marginTop:10, marginBottom:10}}>RIEPILOGO MENSILE</div>
+            {months.map(mk => (
+              <MonthSummary key={mk} monthKey={mk} entries={byMonth[mk]} limits={limits}/>
+            ))}
+
+            {/* Giornaliero */}
+            <div className="kicker" style={{marginTop:20, marginBottom:4}}>GIORNALIERO</div>
+            <div style={{background:'var(--paper)', border:'1px solid var(--paper-edge)', borderRadius:18, padding:'0 16px'}}>
+              {entries.slice().sort((a,b) => b.date.localeCompare(a.date)).map((entry, i, arr) => (
+                <DayRow key={entry.date} entry={entry} limits={limits} isLast={i === arr.length - 1}/>
+              ))}
             </div>
           </>
         )}
