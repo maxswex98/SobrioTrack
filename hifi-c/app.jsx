@@ -271,9 +271,25 @@ function CheckinIntro({ go }) {
 }
 
 // ── CHECK-IN STEP ──
-// Maps display label to stored numeric value for '+' options
-const OPT_LABELS = { smoke: { 8: '8+' }, drink: { 5: '5+' }, bet: { 100: '50+€' } };
-const fmtOpt = (n, key) => (OPT_LABELS[key] && OPT_LABELS[key][n]) ? OPT_LABELS[key][n] : String(n);
+// Generate [0, 1, ..., limit, limit+1] for int-based habits (smoke/drink)
+function makeIntOpts(limit) {
+  const count = Math.max(limit + 2, 4); // at least [0,1,2,3+]
+  return Array.from({ length: count }, (_, i) => i);
+}
+// Generate monetary steps for gambling, always ending with limit+1 as "over"
+function makeBetOpts(limit) {
+  if (limit === 0) return [0, 1]; // 0=niente, 1=qualcosa (>0€)
+  const candidates = [5, 10, 20, 50, 100, 200, 500];
+  const steps = [0, ...candidates.filter(v => v < limit), limit, limit + 1];
+  return [...new Set(steps)].sort((a, b) => a - b);
+}
+// Format option label: values over the limit get a '+' suffix
+const fmtOpt = (n, key, limits) => {
+  if (key === 'pac') return String(n);
+  const lim = limits[key];
+  if (n > lim) return key === 'bet' ? (lim === 0 ? '>0€' : `>${lim}€`) : `${n}+`;
+  return String(n);
+};
 
 function CheckinStep({ go, step, state, setState }) {
   const monthNames = ['gennaio','febbraio','marzo','aprile','maggio','giugno','luglio','agosto','settembre','ottobre','novembre','dicembre'];
@@ -281,15 +297,15 @@ function CheckinStep({ go, step, state, setState }) {
   const STEPS = [
     { key:'smoke', Icon: I.Cig, color:'var(--smoke)', bg:'var(--smoke-bg)',
       q:'Quante sigarette\nhai fumato oggi?', limit: state.limits.smoke, unit:'',
-      opts:[0,1,2,3,4,5,6,7,8], current: state.today.smoke,
+      opts: makeIntOpts(state.limits.smoke), current: state.today.smoke,
       set: v => setState(s => ({...s, today:{...s.today, smoke:v}})) },
     { key:'drink', Icon: I.Glass, color:'var(--drink)', bg:'var(--drink-bg)',
       q:'Unità di alcol?', limit: state.limits.drink, unit:'unità',
-      opts:[0,1,2,3,4,5], current: state.today.drink,
+      opts: makeIntOpts(state.limits.drink), current: state.today.drink,
       set: v => setState(s => ({...s, today:{...s.today, drink:v}})) },
     { key:'bet', Icon: I.Dice, color:'var(--bet)', bg:'var(--bet-bg)',
       q:'Speso in gioco?', limit: state.limits.bet, unit:'€',
-      opts:[0,5,10,20,50,100], current: state.today.bet,
+      opts: makeBetOpts(state.limits.bet), current: state.today.bet,
       set: v => setState(s => ({...s, today:{...s.today, bet:v}})) },
     { key:'pac', Icon: I.Coin, color:'var(--pac)', bg:'var(--pac-bg)',
       q:`PAC di ${currentMonth}.\n200 €.`, limit: null, unit:'',
@@ -354,7 +370,7 @@ function CheckinStep({ go, step, state, setState }) {
                   border: selected ? 'none' : `1px solid ${cur.bg}`,
                   transition: 'background 0.15s',
                 }}>
-                {fmtOpt(n, cur.key)}
+                {fmtOpt(n, cur.key, state.limits)}
               </div>
             );
           })}
