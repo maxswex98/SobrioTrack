@@ -66,12 +66,13 @@ function loadInitial() {
     // individual keys (written by onboarding/settings edit) win over older app-state snapshot
     return {
       pacThisMonth: false,
+      pacChoice: null,
       streaks: { smoke: 0, drink: 0, bet: 0 },
       today: { smoke: 0, drink: 0, bet: 0 },
       journalWritten: false,
       controlDays: 0,
       ...saved,
-      ...(isNewDay ? { journalWritten: false, today: { smoke: 0, drink: 0, bet: 0 } } : {}),
+      ...(isNewDay ? { journalWritten: false, today: { smoke: 0, drink: 0, bet: 0 }, pacThisMonth: false, pacChoice: null } : {}),
       pacTotal, revolut, limits,
     };
   } catch {
@@ -270,26 +271,30 @@ function CheckinIntro({ go }) {
 }
 
 // ── CHECK-IN STEP ──
+// Maps display label to stored numeric value for '+' options
+const OPT_LABELS = { smoke: { 8: '8+' }, drink: { 5: '5+' }, bet: { 100: '50+€' } };
+const fmtOpt = (n, key) => (OPT_LABELS[key] && OPT_LABELS[key][n]) ? OPT_LABELS[key][n] : String(n);
+
 function CheckinStep({ go, step, state, setState }) {
   const monthNames = ['gennaio','febbraio','marzo','aprile','maggio','giugno','luglio','agosto','settembre','ottobre','novembre','dicembre'];
   const currentMonth = monthNames[new Date().getMonth()];
   const STEPS = [
     { key:'smoke', Icon: I.Cig, color:'var(--smoke)', bg:'var(--smoke-bg)',
       q:'Quante sigarette\nhai fumato oggi?', limit: state.limits.smoke, unit:'',
-      opts:[0,1,2,3,4,5,6,7,'8+'], current: state.today.smoke,
+      opts:[0,1,2,3,4,5,6,7,8], current: state.today.smoke,
       set: v => setState(s => ({...s, today:{...s.today, smoke:v}})) },
     { key:'drink', Icon: I.Glass, color:'var(--drink)', bg:'var(--drink-bg)',
       q:'Unità di alcol?', limit: state.limits.drink, unit:'unità',
-      opts:[0,1,2,3,4,'5+'], current: state.today.drink,
+      opts:[0,1,2,3,4,5], current: state.today.drink,
       set: v => setState(s => ({...s, today:{...s.today, drink:v}})) },
     { key:'bet', Icon: I.Dice, color:'var(--bet)', bg:'var(--bet-bg)',
       q:'Speso in gioco?', limit: state.limits.bet, unit:'€',
-      opts:[0,5,10,20,50,'+'], current: state.today.bet,
+      opts:[0,5,10,20,50,100], current: state.today.bet,
       set: v => setState(s => ({...s, today:{...s.today, bet:v}})) },
     { key:'pac', Icon: I.Coin, color:'var(--pac)', bg:'var(--pac-bg)',
       q:`PAC di ${currentMonth}.\n200 €.`, limit: null, unit:'',
-      opts:['✓ versato', 'saltato', 'dopo'], current: state.pacThisMonth ? '✓ versato' : null,
-      set: v => setState(s => ({...s, pacThisMonth: v === '✓ versato'})) },
+      opts:['✓ versato', 'saltato', 'dopo'], current: state.pacChoice,
+      set: v => setState(s => ({...s, pacThisMonth: v === '✓ versato', pacChoice: v})) },
   ];
   const cur = STEPS[step];
   const pct = ((step + 1) / 4) * 100;
@@ -332,7 +337,7 @@ function CheckinStep({ go, step, state, setState }) {
           gap: 10, marginTop: 28,
         }}>
           {cur.opts.map((n, i) => {
-            const selected = cur.current === n || (typeof n === 'number' && cur.current === n);
+            const selected = cur.current === n;
             return (
               <div
                 key={i}
@@ -349,7 +354,7 @@ function CheckinStep({ go, step, state, setState }) {
                   border: selected ? 'none' : `1px solid ${cur.bg}`,
                   transition: 'background 0.15s',
                 }}>
-                {n}
+                {fmtOpt(n, cur.key)}
               </div>
             );
           })}
@@ -386,8 +391,8 @@ function CheckinStep({ go, step, state, setState }) {
 
 // ── CHECK-IN DONE ──
 function CheckinDone({ go, state, setState }) {
-  // Snapshot today's values at mount before any state update resets them
-  const snap = useRef({ ...state.today, pac: state.pacThisMonth }).current;
+  // Snapshot today's values and streaks at mount before any state update
+  const snap = useRef({ ...state.today, pac: state.pacThisMonth, streaks: { ...state.streaks } }).current;
   const overSmoke = snap.smoke > state.limits.smoke;
   const overDrink = snap.drink > state.limits.drink;
   const overBet = snap.bet > state.limits.bet;
@@ -400,7 +405,7 @@ function CheckinDone({ go, state, setState }) {
     let entries = [];
     try { entries = JSON.parse(localStorage.getItem('entries') || '[]'); } catch {}
     if (entries.find(e => e.date === dateKey)) return;
-    const newEntry = { date: dateKey, smoke: state.today.smoke, drink: state.today.drink, bet: state.today.bet, pac: state.pacThisMonth };
+    const newEntry = { date: dateKey, smoke: snap.smoke, drink: snap.drink, bet: snap.bet, pac: snap.pac };
     entries.unshift(newEntry);
     try { localStorage.setItem('entries', JSON.stringify(entries.slice(0,365))); } catch {}
     setState(s => ({
@@ -419,7 +424,7 @@ function CheckinDone({ go, state, setState }) {
   if (anyOver) return <Sgarro go={go} state={state} setState={setState} snap={snap} overSmoke={overSmoke} overDrink={overDrink} overBet={overBet}/>;
 
   const todayStr = new Date().toLocaleDateString('it-IT', {day:'numeric', month:'short'}).toUpperCase();
-  const newStreak = (state.streaks?.smoke || 0) + 1;
+  const newStreak = (snap.streaks?.smoke || 0) + 1;
 
   return (
     <div className="screen-body screen-enter">
