@@ -198,13 +198,13 @@ function Home({ go, state }) {
           </div>
 
           <button
-            onClick={() => isAfter19 && go('checkin-intro')}
+            onClick={() => go('checkin-intro')}
             className="btn btn-primary btn-block"
-            style={{marginTop: 22, padding: '18px 20px', fontSize: 16, fontFamily: 'Instrument Serif, serif', fontWeight: 400, letterSpacing: 0.3, opacity: isAfter19 ? 1 : 0.45, cursor: isAfter19 ? 'pointer' : 'default'}}>
-            {!isAfter19 ? 'Diario disponibile dalle 19:00' : state.journalWritten ? 'Modifica il diario di stasera' : 'Apri il diario di stasera'}
+            style={{marginTop: 22, padding: '18px 20px', fontSize: 16, fontFamily: 'Instrument Serif, serif', fontWeight: 400, letterSpacing: 0.3}}>
+            {state.journalWritten ? 'Modifica il diario di stasera' : 'Apri il diario di stasera'}
           </button>
           <div className="annot" style={{textAlign:'center', marginTop:8, fontSize:14}}>
-            {!isAfter19 ? `ora è ${timeStr} · torna stasera` : state.journalWritten ? `${timeStr} · già compilato` : `${timeStr} · ti aspetta`}
+            {state.journalWritten ? `${timeStr} · già compilato` : `${timeStr} · ti aspetta`}
           </div>
         </div>
       </div>
@@ -433,7 +433,6 @@ function CheckinDone({ go, state, setState }) {
   const anyOver = overSmoke || overDrink || overBet;
 
   React.useEffect(() => {
-    if (anyOver) return;
     const today = new Date();
     const dateKey = today.toISOString().slice(0,10);
     let entries = [];
@@ -445,7 +444,6 @@ function CheckinDone({ go, state, setState }) {
     else { entries.unshift(newEntry); }
     try { localStorage.setItem('entries', JSON.stringify(entries.slice(0,365))); } catch {}
     setState(s => {
-      // Add +200 only once per month when PAC is first confirmed
       const pacConfirmedNow = snap.pac && !s.pacMonthDone;
       const newPacTotal = pacConfirmedNow ? (s.pacTotal || 0) + 200 : s.pacTotal;
       if (pacConfirmedNow) {
@@ -848,10 +846,7 @@ function Stats({ go, state }) {
             <div className="serif-it" style={{fontSize:16, color:'var(--ink-mute)', marginTop:14, lineHeight:1.5}}>
               La storia si scrive una sera alla volta. Fai il primo check-in stasera.
             </div>
-            {new Date().getHours() >= 19
-              ? <button onClick={() => go('checkin-intro')} className="btn btn-primary" style={{marginTop:24, padding:'12px 22px', fontFamily:'Instrument Serif', fontSize:16}}>apri il diario →</button>
-              : <div className="annot" style={{marginTop:20, fontSize:14}}>disponibile dalle 19:00</div>
-            }
+            <button onClick={() => go('checkin-intro')} className="btn btn-primary" style={{marginTop:24, padding:'12px 22px', fontFamily:'Instrument Serif', fontSize:16}}>apri il diario →</button>
           </div>
         ) : (
           <>
@@ -1484,7 +1479,7 @@ function EntryDetail({ go, state }) {
           </div>
         </div>
 
-        {isToday && isAfter19 && (
+        {isToday && (
           <button onClick={() => go('checkin-intro')} style={{
             marginTop:18, width:'100%', padding:'12px 16px',
             background:'transparent', border:'1.5px solid var(--paper-edge)',
