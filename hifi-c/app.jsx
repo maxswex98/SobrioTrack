@@ -967,9 +967,44 @@ function Settings({ go, state, setState }) {
 
   const reset = () => {
     try {
-      ['user-name','pac-total','revolut','limits','app-state','hifi-c-onboarded','hifi-c-screen'].forEach(k => localStorage.removeItem(k));
+      ['user-name','pac-total','revolut','limits','app-state','hifi-c-onboarded','hifi-c-screen',
+       'entries','extra-accounts','revolut-log','tone','notif-state',
+       'last-notif-20','last-notif-22'].forEach(k => localStorage.removeItem(k));
     } catch {}
     location.reload();
+  };
+
+  const DATA_KEYS = ['app-state','entries','pac-total','revolut','limits','extra-accounts',
+                     'user-name','revolut-log','tone','notif-state','hifi-c-onboarded'];
+
+  const exportData = () => {
+    const data = { _version: 1, _date: new Date().toISOString() };
+    DATA_KEYS.forEach(k => { data[k] = localStorage.getItem(k); });
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `sobriotrack-backup-${new Date().toISOString().slice(0,10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const importData = (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const data = JSON.parse(ev.target.result);
+        DATA_KEYS.forEach(k => {
+          if (data[k] !== null && data[k] !== undefined) localStorage.setItem(k, data[k]);
+        });
+        location.reload();
+      } catch { alert('File non valido.'); }
+    };
+    reader.readAsText(file);
   };
   return (
     <div className="screen-body screen-enter">
@@ -1021,7 +1056,32 @@ function Settings({ go, state, setState }) {
           <ToggleRow label="Face ID" val="all'apertura" on={notifs.faceid} onClick={() => toggleNotif('faceid')} last/>
         </Card>
 
-        <div style={{marginTop:24}}>
+        <div className="label-tiny" style={{marginTop:20, marginBottom:8}}>I MIEI DATI</div>
+        <Card>
+          <div onClick={exportData} style={{padding:'14px 16px', display:'flex', alignItems:'center', gap:12, cursor:'pointer', borderBottom:'1px solid var(--paper-edge)'}}>
+            <div style={{width:36, height:36, borderRadius:10, background:'var(--pac-bg)', display:'flex', alignItems:'center', justifyContent:'center'}}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--pac)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v13M7 11l5 5 5-5"/><path d="M5 20h14"/></svg>
+            </div>
+            <div style={{flex:1}}>
+              <div style={{fontSize:14, fontWeight:600}}>Esporta backup</div>
+              <div style={{fontSize:12, color:'var(--ink-mute)', marginTop:1}}>scarica un file JSON con tutti i dati</div>
+            </div>
+            <I.Chev s={14} c="var(--ink-mute)"/>
+          </div>
+          <label style={{padding:'14px 16px', display:'flex', alignItems:'center', gap:12, cursor:'pointer'}}>
+            <div style={{width:36, height:36, borderRadius:10, background:'var(--drink-bg)', display:'flex', alignItems:'center', justifyContent:'center'}}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--drink)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 21V8M7 13l5-5 5 5"/><path d="M5 4h14"/></svg>
+            </div>
+            <div style={{flex:1}}>
+              <div style={{fontSize:14, fontWeight:600}}>Importa backup</div>
+              <div style={{fontSize:12, color:'var(--ink-mute)', marginTop:1}}>ripristina da un file JSON salvato</div>
+            </div>
+            <I.Chev s={14} c="var(--ink-mute)"/>
+            <input type="file" accept=".json" onChange={importData} style={{display:'none'}}/>
+          </label>
+        </Card>
+
+        <div style={{marginTop:12}}>
           <button onClick={() => setConfirmReset(true)} style={{width:'100%', padding:'12px', background:'transparent', border:'1px solid var(--paper-edge)', borderRadius:12, color:'var(--smoke)', fontFamily:'inherit', fontSize:13, cursor:'pointer'}}>
             resetta tutti i dati
           </button>
