@@ -198,13 +198,13 @@ function Home({ go, state }) {
           </div>
 
           <button
-            onClick={() => go('checkin-intro')}
+            onClick={() => isAfter19 && go('checkin-intro')}
             className="btn btn-primary btn-block"
-            style={{marginTop: 22, padding: '18px 20px', fontSize: 16, fontFamily: 'Instrument Serif, serif', fontWeight: 400, letterSpacing: 0.3}}>
-            {state.journalWritten ? 'Modifica il diario di stasera' : 'Apri il diario di stasera'}
+            style={{marginTop: 22, padding: '18px 20px', fontSize: 16, fontFamily: 'Instrument Serif, serif', fontWeight: 400, letterSpacing: 0.3, opacity: isAfter19 ? 1 : 0.45, cursor: isAfter19 ? 'pointer' : 'default'}}>
+            {!isAfter19 ? 'Diario disponibile dalle 19:00' : state.journalWritten ? 'Modifica il diario di stasera' : 'Apri il diario di stasera'}
           </button>
           <div className="annot" style={{textAlign:'center', marginTop:8, fontSize:14}}>
-            {state.journalWritten ? `${timeStr} · già compilato` : `${timeStr} · ti aspetta`}
+            {!isAfter19 ? `ora è ${timeStr} · torna stasera` : state.journalWritten ? `${timeStr} · già compilato` : `${timeStr} · ti aspetta`}
           </div>
         </div>
       </div>
@@ -897,7 +897,10 @@ function Stats({ go, state }) {
             <div className="serif-it" style={{fontSize:16, color:'var(--ink-mute)', marginTop:14, lineHeight:1.5}}>
               La storia si scrive una sera alla volta. Fai il primo check-in stasera.
             </div>
-            <button onClick={() => go('checkin-intro')} className="btn btn-primary" style={{marginTop:24, padding:'12px 22px', fontFamily:'Instrument Serif', fontSize:16}}>apri il diario →</button>
+            {new Date().getHours() >= 19
+              ? <button onClick={() => go('checkin-intro')} className="btn btn-primary" style={{marginTop:24, padding:'12px 22px', fontFamily:'Instrument Serif', fontSize:16}}>apri il diario →</button>
+              : <div className="annot" style={{marginTop:20, fontSize:14}}>disponibile dalle 19:00</div>
+            }
           </div>
         ) : (
           <>
@@ -1590,7 +1593,7 @@ function EntryDetail({ go, state }) {
           </div>
         </div>
 
-        {isToday && (
+        {isToday && isAfter19 && (
           <button onClick={() => go('checkin-intro')} style={{
             marginTop:18, width:'100%', padding:'12px 16px',
             background:'transparent', border:'1.5px solid var(--paper-edge)',
