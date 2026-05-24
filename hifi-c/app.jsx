@@ -301,6 +301,7 @@ const fmtOpt = (n, key, limits) => {
 function CheckinStep({ go, step, state, setState }) {
   const monthNames = ['gennaio','febbraio','marzo','aprile','maggio','giugno','luglio','agosto','settembre','ottobre','novembre','dicembre'];
   const currentMonth = monthNames[new Date().getMonth()];
+  const [betInput, setBetInput] = useState(state.today.bet > 0 ? String(state.today.bet) : '');
   const STEPS = [
     { key:'smoke', Icon: I.Cig, color:'var(--smoke)', bg:'var(--smoke-bg)',
       q:'Quante sigarette\nhai fumato oggi?', limit: state.limits.smoke, unit:'',
@@ -362,7 +363,56 @@ function CheckinStep({ go, step, state, setState }) {
           </div>
         )}
 
-        {/* Options */}
+        {/* Bet step: free-text amount input */}
+        {cur.key === 'bet' ? (
+          <div style={{marginTop:24}}>
+            <div style={{
+              background: cur.bg, borderRadius:20, padding:'28px 24px 20px',
+              display:'flex', flexDirection:'column', alignItems:'center', gap:4,
+            }}>
+              <div className="mono" style={{fontSize:11, color:'var(--bet)', letterSpacing:'0.15em', marginBottom:4}}>IMPORTO SPESO</div>
+              <div style={{display:'flex', alignItems:'center', gap:8, width:'100%', justifyContent:'center'}}>
+                <span className="serif" style={{fontSize:52, color:'var(--bet)', lineHeight:1}}>€</span>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  min="0"
+                  step="any"
+                  value={betInput}
+                  onChange={e => {
+                    setBetInput(e.target.value);
+                    const n = parseFloat(e.target.value);
+                    cur.set(isNaN(n) ? 0 : n);
+                  }}
+                  placeholder="0"
+                  style={{
+                    fontSize:64, fontFamily:'Instrument Serif, serif',
+                    width:160, border:'none', background:'transparent',
+                    color:'var(--ink)', outline:'none',
+                    borderBottom:'2px solid rgba(168,107,46,0.25)',
+                    textAlign:'center', padding:'4px 0',
+                    WebkitAppearance:'none', MozAppearance:'textfield',
+                  }}
+                />
+              </div>
+              {(parseFloat(betInput) || 0) > 0 && (
+                <button onClick={() => { setBetInput(''); cur.set(0); }} style={{
+                  marginTop:12, background:'none', border:'none',
+                  fontSize:13, color:'var(--bet)', cursor:'pointer',
+                  fontFamily:'Inter', fontWeight:500,
+                }}>
+                  ✕ azzera (niente gioco)
+                </button>
+              )}
+              {!(parseFloat(betInput) || 0) && (
+                <div className="serif-it" style={{marginTop:8, fontSize:15, color:'var(--ink-mute)'}}>
+                  digita 0 se non hai giocato
+                </div>
+              )}
+            </div>
+          </div>
+        ) : (
+        /* Options grid for other steps */
         <div style={{
           display:'grid',
           gridTemplateColumns: cur.key === 'pac' ? '1fr' : 'repeat(3, 1fr)',
@@ -393,6 +443,7 @@ function CheckinStep({ go, step, state, setState }) {
             );
           })}
         </div>
+        )}
 
         {overLimit && (
           <div className="fade-in" style={{
