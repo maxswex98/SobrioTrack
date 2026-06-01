@@ -52,6 +52,67 @@ const Phone = ({ children, statusDark = false }) => (
 );
 
 // ═══════════════════════════════════════════════════
+// TONE MESSAGE BANK
+// ═══════════════════════════════════════════════════
+const TONE_MESSAGES = {
+  home_ok: {
+    gentile:          ['ogni giorno è una scelta. e oggi hai scelto bene.','stai costruendo qualcosa di solido.','piccoli passi, grandi risultati.','ci sei. continua così.'],
+    neutra:           ['continua. un giorno alla volta.','progressi costanti.','dati nella norma. avanti.','registro aggiornato. buon lavoro.'],
+    'coach militare': ['non mollare. ogni giorno è una battaglia.','tieni la rotta. niente sconti.','avanti. senza pause.','la disciplina si costruisce giorno per giorno.'],
+    spietata:         ['ancora vivo? bene. domani si ricomincia.','nessun merito per ieri. vinci oggi.','il controllo non si prende le ferie.','soddisfatto? non dovresti esserlo ancora.'],
+  },
+  home_zero: {
+    gentile:          ['inizia stasera. il primo passo è il più importante.','tutti i grandi streak iniziano da zero.','è il momento giusto per cominciare.'],
+    neutra:           ['inizia stasera. fai il primo check-in.','nessun dato ancora. comincia questa sera.','zero giorni. apri il diario stasera.'],
+    'coach militare': ['zero giorni. inaccettabile. comincia stanotte.','sei fermo al via. muoviti.','ogni giorno senza check-in è un giorno perso.'],
+    spietata:         ['ancora zero. che aspetti.','zero giorni. zero scuse.','fermo. immobile. inizia.'],
+  },
+  checkin_intro: {
+    gentile:          ['Prenditi un momento per te.\nCome è andata davvero?','Onestà con se stessi.\nÈ già un atto di forza.','Sei qui. È già qualcosa.\nCome è andata?'],
+    neutra:           ['Niente giustificazioni.\nCome è andata oggi?','Dati oggettivi.\nCosa è successo oggi?','Quattro risposte.\nUna verità.'],
+    'coach militare': ['Niente alibi.\nI numeri non mentono.','Guarda la realtà in faccia.\nCome è andata?','Momento della verità.\nNessuna scusa.'],
+    spietata:         ['Inutile fingere.\nI dati non mentono.','Nessuna scusa.\nI fatti.','Smettila di rimandare.\nRispondi.'],
+  },
+  over_limit: {
+    gentile:          ['Hai superato il tuo obiettivo per oggi.','Più di quanto ti eri prefissato. Succede.'],
+    neutra:           ['Limite superato.','Oltre i parametri impostati.'],
+    'coach militare': ['OLTRE IL LIMITE. Hai ceduto.','Bastava poco. Non ce l\'hai fatta.'],
+    spietata:         ['Limite superato. Debole.','Inaccettabile. Di nuovo.'],
+  },
+  done_title: {
+    gentile:          ['Ottimo lavoro.','Ce l\'hai fatta.','Giornata riuscita.','Ben fatto.'],
+    neutra:           ['Giornata in ordine.','Tutto nei limiti.','Dati registrati.','Nei parametri.'],
+    'coach militare': ['Missione completata.','Obiettivo rispettato.','Tenuto duro.','Disciplina rispettata.'],
+    spietata:         ['Oggi sì.','Minimo rispettato.','Nessuno sgarro. Per stavolta.','Fatto. Era il minimo.'],
+  },
+  done_sub: {
+    gentile:          ['Ogni giorno è una vittoria.\nContinua così.','Sei orgoglioso?\nDovresti esserlo.','Funziona.\nContinua.','Un passo alla volta.\nStai andando bene.'],
+    neutra:           ['Streak +1. Avanti.','Controllo mantenuto.','Un altro giorno nel registro.','I dati parlano chiaro. Avanti.'],
+    'coach militare': ['Tenuto duro. Continua così.','+1. Non festeggiare, lavora.','Streak attiva. Domani di più.','Bene. Non è abbastanza. Ancora.'],
+    spietata:         ['Non è un risultato. È il minimo.','Domani fai lo stesso.','Zero premi per le regole rispettate.','Aspettato. Fallo ancora domani.'],
+  },
+  sgarro_title: {
+    gentile:          ['Non è andata bene.','Un passo indietro.','Oggi no.'],
+    neutra:           ['Limite superato.','Fuori dai parametri.','Sforato.'],
+    'coach militare': ['Hai ceduto.','Sconfitto oggi.','Disciplina mancata.'],
+    spietata:         ['Hai ceduto.','Debole.','Inaccettabile.'],
+  },
+  sgarro_sub: {
+    gentile:          ['Domani è un nuovo giorno.','Non lasciare che un giorno rovinato diventi due.','Riparti. Puoi farcela.'],
+    neutra:           ['Dati registrati. Riprendi domani.','Il limite esiste per un motivo.','Analizza e ricomincia.'],
+    'coach militare': ['Bastava poco. Il limite era lì.','Nessuna scusa. Domani si ricomincia.','Azzerato. Ricostruisci.'],
+    spietata:         ['Ricordati questa sensazione.','Zero giustificazioni.','Nessuno ti ha obbligato.'],
+  },
+};
+function getMsg(scenario, tone, seed) {
+  const t = tone || 'coach militare';
+  const bank = TONE_MESSAGES[scenario] || {};
+  const variants = bank[t] || bank['neutra'] || [''];
+  return variants[seed % variants.length];
+}
+const getTone = () => { try { return localStorage.getItem('tone') || 'coach militare'; } catch { return 'coach militare'; } };
+
+// ═══════════════════════════════════════════════════
 // STATE
 // ═══════════════════════════════════════════════════
 // Check-in window: 19:00 → 03:00 (next calendar day)
@@ -116,6 +177,8 @@ function Home({ go, state }) {
   const monthLabel = monthNames[now.getMonth()];
   const checkinOpen = isCheckinOpen();
   const timeStr = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+  const tone = getTone();
+  const seed = now.getDate();
   // Control days: count entries this calendar month only
   const currentMonthKey = logicalDateKey().slice(0, 7);
   const allEntries = (() => { try { return JSON.parse(localStorage.getItem('entries') || '[]'); } catch { return []; } })();
@@ -151,7 +214,7 @@ function Home({ go, state }) {
               </div>
             </div>
             <div className="serif-it" style={{fontSize:17, marginTop:4, opacity:0.8}}>
-              {controlDays === 0 ? 'inizia stasera. fai il primo check-in.' : 'continua. un giorno alla volta.'}
+              {getMsg(controlDays === 0 ? 'home_zero' : 'home_ok', tone, seed)}
             </div>
           </div>
 
@@ -276,6 +339,9 @@ function StreakRow({ Icon, label, val, days, color, bg, under }) {
 
 // ── CHECK-IN INTRO ──
 function CheckinIntro({ go }) {
+  const tone = getTone();
+  const seed = new Date().getDate();
+  const introSub = getMsg('checkin_intro', tone, seed);
   return (
     <div className="screen-body screen-enter" style={{background:'var(--ink)', color:'var(--paper)'}}>
       <div style={{position:'absolute', inset:0, background:'var(--ink)'}}/>
@@ -286,8 +352,8 @@ function CheckinIntro({ go }) {
           <div className="serif" style={{fontSize:48, lineHeight:1.05, marginTop:12}}>
             Quattro<br/>domande.<br/><span style={{color:'#C8A66B'}}>Una verità.</span>
           </div>
-          <div className="serif-it" style={{fontSize:20, marginTop:20, opacity:0.75, lineHeight:1.4}}>
-            Niente giustificazioni.<br/>Come è andata oggi?
+          <div className="serif-it" style={{fontSize:20, marginTop:20, opacity:0.75, lineHeight:1.4, whiteSpace:'pre-line'}}>
+            {introSub}
           </div>
         </div>
         <button onClick={() => go('checkin-1')} className="btn" style={{background:'var(--paper)', color:'var(--ink)', fontFamily:'Instrument Serif', fontSize:17, padding:'16px'}}>
@@ -323,6 +389,8 @@ function CheckinStep({ go, step, state, setState }) {
   const monthNames = ['gennaio','febbraio','marzo','aprile','maggio','giugno','luglio','agosto','settembre','ottobre','novembre','dicembre'];
   const currentMonth = monthNames[new Date().getMonth()];
   const [betInput, setBetInput] = useState(state.today.bet > 0 ? String(state.today.bet) : '');
+  const tone = getTone();
+  const seed = new Date().getDate();
   const STEPS = [
     { key:'smoke', Icon: I.Cig, color:'var(--smoke)', bg:'var(--smoke-bg)',
       q:'Quante sigarette\nhai fumato oggi?', limit: state.limits.smoke, unit:'',
@@ -476,7 +544,7 @@ function CheckinStep({ go, step, state, setState }) {
             <div>
               <div style={{fontWeight:700, fontSize:14}}>OLTRE IL LIMITE.</div>
               <div className="serif-it" style={{fontSize:15, marginTop:2, opacity:0.9}}>
-                Bastava poco. Hai ceduto.
+                {getMsg('over_limit', tone, seed)}
               </div>
             </div>
           </div>
@@ -542,17 +610,21 @@ function CheckinDone({ go, state, setState }) {
 
   const todayStr = new Date().toLocaleDateString('it-IT', {day:'numeric', month:'short'}).toUpperCase();
   const newStreak = (snap.streaks?.smoke || 0) + 1;
+  const tone = getTone();
+  const seed = new Date().getDate();
+  const doneTitle = getMsg('done_title', tone, seed);
+  const streakBonus = newStreak >= 7 ? `${newStreak} giorni di fila. Non fermarti ora.` : null;
+  const doneSub = streakBonus || getMsg('done_sub', tone, seed);
 
   return (
     <div className="screen-body screen-enter">
       <div className="screen-scroll" style={{padding:'40px 28px 20px'}}>
         <div className="kicker">RAPPORTO DEL {todayStr}</div>
         <div className="serif" style={{fontSize:44, lineHeight:1.05, marginTop:8}}>
-          Giornata<br/>in ordine.
+          {doneTitle}
         </div>
-        <div className="serif-it" style={{fontSize:19, marginTop:12, color:'var(--ink-3)', lineHeight:1.4}}>
-          Streak <span style={{color:'var(--pac)'}}>+1 giorno</span>.<br/>
-          Tenuto duro. Continua così.
+        <div className="serif-it" style={{fontSize:19, marginTop:12, color:'var(--ink-3)', lineHeight:1.4, whiteSpace:'pre-line'}}>
+          {doneSub}
         </div>
 
         <div style={{marginTop:28, background:'var(--paper-2)', borderRadius:18, padding:18, border:'1px solid var(--paper-edge)'}}>
@@ -584,6 +656,10 @@ function CheckinDone({ go, state, setState }) {
 
 // ── SGARRO ──
 function Sgarro({ go, overSmoke, overDrink, overBet, state, snap }) {
+  const tone = getTone();
+  const seed = new Date().getDate();
+  const sgarroTitle = getMsg('sgarro_title', tone, seed);
+  const sgarroSub   = getMsg('sgarro_sub',   tone, seed);
   const s = snap || state.today;
   const labels = [];
   if (overSmoke) labels.push({t:'Sigarette', v:`${s.smoke} / ${state.limits.smoke}`});
@@ -595,11 +671,11 @@ function Sgarro({ go, overSmoke, overDrink, overBet, state, snap }) {
       <div style={{position:'absolute', inset:0, background:'linear-gradient(180deg, #8C3A2E 0%, #4A1810 100%)'}}/>
       <div style={{position:'relative', zIndex:1, flex:1, display:'flex', flexDirection:'column', padding:'60px 32px 32px'}}>
         <div style={{fontFamily:'JetBrains Mono', fontSize:10, letterSpacing:'0.25em', opacity:0.6}}>RAPPORTO NEGATIVO · 21.04</div>
-        <div className="serif" style={{fontSize:64, lineHeight:0.95, marginTop:14, color:'#F5D9BF'}}>
-          Hai<br/>ceduto.
+        <div className="serif" style={{fontSize:64, lineHeight:0.95, marginTop:14, color:'#F5D9BF', whiteSpace:'pre-line'}}>
+          {sgarroTitle}
         </div>
-        <div className="serif-it" style={{fontSize:22, marginTop:18, opacity:0.9, lineHeight:1.35}}>
-          Bastava poco.<br/>Il limite era lì.
+        <div className="serif-it" style={{fontSize:22, marginTop:18, opacity:0.9, lineHeight:1.35, whiteSpace:'pre-line'}}>
+          {sgarroSub}
         </div>
 
         <div style={{marginTop:30, display:'flex', flexDirection:'column', gap:8}}>

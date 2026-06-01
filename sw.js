@@ -1,5 +1,5 @@
 // Service worker — cache-first for app shell
-const CACHE = 'diario-serale-v13';
+const CACHE = 'diario-serale-v14';
 const ASSETS = [
   './',
   './index.html',
