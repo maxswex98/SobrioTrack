@@ -1737,6 +1737,99 @@ function Stat({v,l,c}) {
 
 // ═══════════════════════════════════════════════════
 // APP ROOT
+// ── WELCOME (primo avvio — importa backup o inizia da zero) ──
+function Welcome({ go }) {
+  const [importing, setImporting] = useState(false);
+  const [error, setError] = useState('');
+
+  const DATA_KEYS = ['app-state','entries','pac-total','revolut','limits','extra-accounts',
+                     'user-name','revolut-log','tone','notif-state','hifi-c-onboarded'];
+
+  const handleImport = (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    setImporting(true);
+    setError('');
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const data = JSON.parse(ev.target.result);
+        if (!data._version) throw new Error('file non valido');
+        DATA_KEYS.forEach(k => {
+          if (data[k] !== null && data[k] !== undefined) localStorage.setItem(k, data[k]);
+        });
+        // ensure onboarded flag is set so app goes to home
+        localStorage.setItem('hifi-c-onboarded', '1');
+        location.reload();
+      } catch {
+        setImporting(false);
+        setError('File non riconosciuto. Usa un backup esportato da SobrioTrack.');
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  return (
+    <div className="screen-body screen-enter" style={{background:'var(--ink)', color:'var(--paper)'}}>
+      <div style={{flex:1, display:'flex', flexDirection:'column', padding:'56px 32px 48px'}}>
+
+        {/* Logo / brand */}
+        <div style={{display:'flex', alignItems:'center', gap:12, marginBottom:48}}>
+          <div style={{width:48, height:48, borderRadius:14, overflow:'hidden'}}>
+            <img src="./icons/icon-192.png" alt="SobrioTrack" style={{width:'100%', height:'100%', objectFit:'cover'}}/>
+          </div>
+          <div>
+            <div className="serif" style={{fontSize:22, lineHeight:1}}>SobrioTrack</div>
+            <div className="mono" style={{fontSize:10, color:'rgba(251,247,235,0.45)', letterSpacing:'0.15em', marginTop:3}}>DIARIO SERALE</div>
+          </div>
+        </div>
+
+        <div style={{flex:1}}>
+          <div className="serif" style={{fontSize:42, lineHeight:1.05}}>
+            Bentornato.<br/><span style={{color:'#C8A66B'}}>I tuoi dati<br/>sono al sicuro?</span>
+          </div>
+          <div className="serif-it" style={{fontSize:18, marginTop:20, opacity:0.7, lineHeight:1.5}}>
+            Se hai un backup salvato, importalo ora e riparti da dove avevi lasciato.
+          </div>
+        </div>
+
+        {/* Import button */}
+        <label style={{
+          display:'flex', alignItems:'center', justifyContent:'center', gap:10,
+          background:'var(--paper)', color:'var(--ink)',
+          padding:'18px 20px', borderRadius:16,
+          fontSize:16, fontFamily:'Instrument Serif, serif', fontWeight:400,
+          cursor: importing ? 'default' : 'pointer',
+          opacity: importing ? 0.6 : 1,
+          marginBottom:12,
+        }}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 21V8M7 13l5-5 5 5"/><path d="M5 4h14"/></svg>
+          {importing ? 'Importando…' : 'Importa backup'}
+          <input type="file" accept=".json" onChange={handleImport} style={{display:'none'}} disabled={importing}/>
+        </label>
+
+        {error && (
+          <div style={{fontSize:13, color:'var(--smoke-bg)', textAlign:'center', marginBottom:12}}>{error}</div>
+        )}
+
+        {/* Start fresh */}
+        <button
+          onClick={() => go('onboarding')}
+          style={{
+            background:'transparent', color:'rgba(251,247,235,0.55)',
+            border:'1px solid rgba(251,247,235,0.2)',
+            padding:'16px 20px', borderRadius:16,
+            fontSize:15, fontFamily:'Instrument Serif, serif', fontWeight:400,
+            cursor:'pointer',
+          }}>
+          Inizia da zero con il coach →
+        </button>
+
+      </div>
+    </div>
+  );
+}
+
 // ═══════════════════════════════════════════════════
 function isPwaMode() {
   try {
@@ -1804,7 +1897,7 @@ function App() {
   const [screen, setScreen] = useState(() => {
     try {
       // PWA mode: pick onboarding if no data, home otherwise
-      if (isPwaMode() && !localStorage.getItem('hifi-c-onboarded')) return 'onboarding';
+      if (!localStorage.getItem('hifi-c-onboarded')) return 'welcome';
       return localStorage.getItem('hifi-c-screen') || 'home';
     } catch { return 'home'; }
   });
@@ -1831,7 +1924,8 @@ function App() {
   };
 
   let content;
-  if (screen === 'home') content = <Home go={go} state={state}/>;
+  if (screen === 'welcome') content = <Welcome go={go}/>;
+  else if (screen === 'home') content = <Home go={go} state={state}/>;
   else if (screen === 'onboarding') content = <Onboarding go={go} setState={setState}/>;
   else if (screen === 'checkin-intro') content = <CheckinIntro go={go}/>;
   else if (screen === 'checkin-1') content = <CheckinStep go={go} step={0} state={state} setState={setState}/>;
