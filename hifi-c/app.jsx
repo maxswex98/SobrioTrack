@@ -113,6 +113,151 @@ function getMsg(scenario, tone, seed) {
 const getTone = () => { try { return localStorage.getItem('tone') || 'coach militare'; } catch { return 'coach militare'; } };
 
 // ═══════════════════════════════════════════════════
+// EASTER EGGS / ACHIEVEMENTS
+// ═══════════════════════════════════════════════════
+const ACHIEVEMENTS = [
+  // ── milestone: primo check-in in assoluto ──
+  {
+    id: 'first',
+    once: true,
+    check: ({ controlDays, anyOver }) => !anyOver && controlDays === 0,
+    label: 'PRIMO RAPPORTO',
+    title: 'Hai iniziato.',
+    sub: 'Il primo è sempre il più difficile.\nOra sai come si fa.',
+  },
+  // ── giornata pulita (tutto a zero) ──
+  {
+    id: 'perfect',
+    once: false,
+    check: ({ snap, anyOver }) => !anyOver && snap.smoke === 0 && snap.drink === 0 && snap.bet === 0,
+    label: 'GIORNATA PULITA',
+    title: 'Zero su tutto.',
+    sub: 'Nessuna sigaretta. Nessun drink. Nessuna puntata.\nNon capita spesso.',
+  },
+  // ── sabato sera in ordine ──
+  {
+    id: 'saturday',
+    once: false,
+    check: ({ anyOver }) => !anyOver && new Date().getDay() === 6,
+    label: 'SABATO IN ORDINE',
+    title: 'Weekend superato.',
+    sub: 'Il sabato è la prova più dura della settimana.\nHai tenuto duro.',
+  },
+  // ── streak sigarette ──
+  {
+    id: 'streak_7',
+    once: true,
+    check: ({ newStreak, anyOver }) => !anyOver && newStreak === 7,
+    label: 'UNA SETTIMANA',
+    title: 'Sette giorni di fila.',
+    sub: 'Non è fortuna.\nÈ la stessa scelta fatta sette volte.',
+  },
+  {
+    id: 'streak_14',
+    once: true,
+    check: ({ newStreak, anyOver }) => !anyOver && newStreak === 14,
+    label: 'DUE SETTIMANE',
+    title: 'Quattordici giorni.',
+    sub: 'La routine comincia a prendere forma.\nContinua a costruire.',
+  },
+  {
+    id: 'streak_21',
+    once: true,
+    check: ({ newStreak, anyOver }) => !anyOver && newStreak === 21,
+    label: 'TRE SETTIMANE',
+    title: '21 giorni.',
+    sub: 'Ci vogliono 21 giorni per formare un\'abitudine.\nCi sei arrivato.',
+  },
+  {
+    id: 'streak_30',
+    once: true,
+    check: ({ newStreak, anyOver }) => !anyOver && newStreak === 30,
+    label: 'UN MESE',
+    title: 'Trenta giorni.',
+    sub: 'Un mese intero senza cedere.\nSei più forte di quello che pensavi.',
+  },
+  {
+    id: 'streak_50',
+    once: true,
+    check: ({ newStreak, anyOver }) => !anyOver && newStreak === 50,
+    label: 'CINQUANTA GIORNI',
+    title: '50.',
+    sub: 'La metà non arriva qui.\nTu ci sei arrivato.',
+  },
+  {
+    id: 'streak_100',
+    once: true,
+    check: ({ newStreak, anyOver }) => !anyOver && newStreak === 100,
+    label: 'CENTO GIORNI',
+    title: 'Cento.',
+    sub: 'Hai scritto ogni sera.\nCento volte consecutive.\nSenza fermarti.',
+  },
+  // ── bet-free streak ──
+  {
+    id: 'bet_30',
+    once: true,
+    check: ({ betStreak, anyOver }) => !anyOver && betStreak === 30,
+    label: 'UN MESE SENZA GIOCO',
+    title: '30 giorni senza puntate.',
+    sub: 'Il portafoglio respira.\nContinua così.',
+  },
+  {
+    id: 'bet_100',
+    once: true,
+    check: ({ betStreak, anyOver }) => !anyOver && betStreak === 100,
+    label: 'CENTO GIORNI SENZA GIOCO',
+    title: '100 giorni senza puntate.',
+    sub: 'Questo è davvero raro.\nMantieni il controllo.',
+  },
+  // ── milestone totale check-in ──
+  {
+    id: 'checkins_10',
+    once: true,
+    check: ({ controlDays, anyOver }) => !anyOver && controlDays === 9,
+    label: 'DECIMO RAPPORTO',
+    title: 'Dieci rapporti.',
+    sub: 'Hai aperto il diario dieci volte.\nQuesta è costanza.',
+  },
+  {
+    id: 'checkins_30',
+    once: true,
+    check: ({ controlDays, anyOver }) => !anyOver && controlDays === 29,
+    label: 'TRENTA RAPPORTI',
+    title: 'Trenta rapporti.',
+    sub: 'Un mese di dati reali.\nOra puoi vedere chi eri un mese fa.',
+  },
+  {
+    id: 'checkins_100',
+    once: true,
+    check: ({ controlDays, anyOver }) => !anyOver && controlDays === 99,
+    label: 'CENTO RAPPORTI',
+    title: 'Cento sere.',
+    sub: 'Cento volte hai scelto di essere onesto con te stesso.\nNon è poco.',
+  },
+];
+
+function getEasterEgg(snap, state, newStreak) {
+  const anyOver = snap.smoke > state.limits.smoke || snap.drink > state.limits.drink || snap.bet > state.limits.bet;
+  if (anyOver) return null;
+  const betStreak = snap.bet <= state.limits.bet ? (snap.streaks?.bet || 0) + 1 : 0;
+  const controlDays = state.controlDays || 0;
+  let seen = [];
+  try { seen = JSON.parse(localStorage.getItem('achievements-seen') || '[]'); } catch {}
+  const ctx = { snap, state, newStreak, anyOver, betStreak, controlDays };
+  for (const a of ACHIEVEMENTS) {
+    if (a.once && seen.includes(a.id)) continue;
+    if (a.check(ctx)) return a;
+  }
+  return null;
+}
+function markEggSeen(id) {
+  try {
+    let seen = JSON.parse(localStorage.getItem('achievements-seen') || '[]');
+    if (!seen.includes(id)) { seen.push(id); localStorage.setItem('achievements-seen', JSON.stringify(seen)); }
+  } catch {}
+}
+
+// ═══════════════════════════════════════════════════
 // STATE
 // ═══════════════════════════════════════════════════
 // Check-in window: 19:00 → 03:00 (next calendar day)
@@ -582,6 +727,9 @@ function CheckinDone({ go, state, setState }) {
     if (isEdit) { entries[existingIdx] = newEntry; }
     else { entries.unshift(newEntry); }
     try { localStorage.setItem('entries', JSON.stringify(entries.slice(0,365))); } catch {}
+    // Mark easter egg as seen (once-only achievements)
+    const _egg = getEasterEgg(snap, state, (snap.streaks?.smoke || 0) + 1);
+    if (_egg && _egg.once) markEggSeen(_egg.id);
     setState(s => {
       const pacConfirmedNow = snap.pac && !s.pacMonthDone;
       const newPacTotal = pacConfirmedNow ? (s.pacTotal || 0) + 200 : s.pacTotal;
@@ -615,6 +763,7 @@ function CheckinDone({ go, state, setState }) {
   const doneTitle = getMsg('done_title', tone, seed);
   const streakBonus = newStreak >= 7 ? `${newStreak} giorni di fila. Non fermarti ora.` : null;
   const doneSub = streakBonus || getMsg('done_sub', tone, seed);
+  const egg = getEasterEgg(snap, state, newStreak);
 
   return (
     <div className="screen-body screen-enter">
@@ -644,6 +793,29 @@ function CheckinDone({ go, state, setState }) {
           <div className="flame-pulse"><I.Flame s={26} c="var(--pac)"/></div>
         </div>
         <div className="kicker" style={{textAlign:'center', marginTop:4}}>GIORNI DI FILA</div>
+
+        {egg && (
+          <div className="screen-enter" style={{
+            marginTop:24, marginBottom:8,
+            background:'linear-gradient(135deg,#FBF0DC 0%,#F5E2BF 100%)',
+            border:'1.5px solid #DEBA6A',
+            borderRadius:18,
+            padding:'20px 22px 18px',
+            position:'relative', overflow:'hidden',
+          }}>
+            {/* decorative corner star */}
+            <div style={{position:'absolute', top:14, right:18, fontFamily:'JetBrains Mono', fontSize:16, color:'#D4A530', opacity:0.5, userSelect:'none'}}>✦</div>
+            <div style={{fontFamily:'JetBrains Mono', fontSize:9, letterSpacing:'0.25em', color:'#B8861A', marginBottom:10}}>
+              ACHIEVEMENT · {egg.label}
+            </div>
+            <div className="serif" style={{fontSize:26, lineHeight:1.1, color:'#3A2A08'}}>
+              {egg.title}
+            </div>
+            <div className="serif-it" style={{fontSize:15, marginTop:8, color:'#6B4E18', lineHeight:1.45, whiteSpace:'pre-line'}}>
+              {egg.sub}
+            </div>
+          </div>
+        )}
       </div>
       <div style={{padding:'16px 24px 20px'}}>
         <button onClick={() => go('home')} className="btn btn-primary btn-block" style={{padding:'16px', fontFamily:'Instrument Serif, serif', fontSize:17, fontWeight:400}}>
