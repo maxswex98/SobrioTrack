@@ -54,14 +54,30 @@ const Phone = ({ children, statusDark = false }) => (
 // ═══════════════════════════════════════════════════
 // STATE
 // ═══════════════════════════════════════════════════
+// Check-in window: 19:00 → 03:00 (next calendar day)
+// Between 00:00 and 02:59 the "logical day" is still yesterday
+function logicalDateKey() {
+  const now = new Date();
+  if (now.getHours() < 3) {
+    const d = new Date(now);
+    d.setDate(d.getDate() - 1);
+    return d.toISOString().slice(0, 10);
+  }
+  return now.toISOString().slice(0, 10);
+}
+function isCheckinOpen() {
+  const h = new Date().getHours();
+  return h >= 19 || h < 3;
+}
+
 function loadInitial() {
   try {
     const pacTotal = parseFloat(localStorage.getItem('pac-total')) || 0;
     const revolut = parseFloat(localStorage.getItem('revolut')) || 0;
     const limits = JSON.parse(localStorage.getItem('limits') || 'null') || { smoke: 5, drink: 3, bet: 0 };
     const saved = JSON.parse(localStorage.getItem('app-state') || 'null') || {};
-    const todayKey = new Date().toISOString().slice(0, 10);
-    const monthKey = todayKey.slice(0, 7); // "2026-05"
+    const todayKey = logicalDateKey();
+    const monthKey = todayKey.slice(0, 7);
     const isNewDay = saved.journalDate && saved.journalDate !== todayKey;
     const isNewMonth = !saved.pacMonth || saved.pacMonth !== monthKey;
     // individual keys (written by onboarding/settings edit) win over older app-state snapshot
@@ -98,9 +114,13 @@ function Home({ go, state }) {
   const todayStr = `${now.getDate()} ${monthNames[now.getMonth()]}`;
   const dowStr = dayNames[now.getDay()];
   const monthLabel = monthNames[now.getMonth()];
-  const controlDays = state.controlDays || 0;
-  const isAfter19 = now.getHours() >= 19;
+  const checkinOpen = isCheckinOpen();
   const timeStr = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+  // Control days: count entries this calendar month only
+  const currentMonthKey = logicalDateKey().slice(0, 7);
+  const allEntries = (() => { try { return JSON.parse(localStorage.getItem('entries') || '[]'); } catch { return []; } })();
+  const controlDays = allEntries.filter(e => e.date.startsWith(currentMonthKey)).length;
+  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
   return (
     <div className="screen-body screen-enter">
       <div className="screen-scroll">
@@ -122,10 +142,11 @@ function Home({ go, state }) {
             background: 'var(--ink)', color: 'var(--paper)',
             borderRadius: 20, position: 'relative', overflow: 'hidden',
           }}>
-            <div className="kicker" style={{color:'rgba(251,247,235,0.55)'}}>GIORNI DI CONTROLLO</div>
+            <div className="kicker" style={{color:'rgba(251,247,235,0.55)'}}>CONTROLLO · {monthLabel.toUpperCase()}</div>
             <div style={{display:'flex', alignItems:'baseline', gap: 12, marginTop: 6}}>
               <span className="serif" style={{fontSize:84, lineHeight:0.9}}>{controlDays}</span>
-              <div className="flame-pulse" style={{marginBottom:6}}>
+              <span className="serif" style={{fontSize:32, lineHeight:1, opacity:0.45}}>/ {daysInMonth}</span>
+              <div className="flame-pulse" style={{marginBottom:6, marginLeft:4}}>
                 <I.Flame s={28} c="#C8A66B"/>
               </div>
             </div>
@@ -198,13 +219,13 @@ function Home({ go, state }) {
           </div>
 
           <button
-            onClick={() => isAfter19 && go('checkin-intro')}
+            onClick={() => checkinOpen && go('checkin-intro')}
             className="btn btn-primary btn-block"
-            style={{marginTop: 22, padding: '18px 20px', fontSize: 16, fontFamily: 'Instrument Serif, serif', fontWeight: 400, letterSpacing: 0.3, opacity: isAfter19 ? 1 : 0.45, cursor: isAfter19 ? 'pointer' : 'default'}}>
-            {!isAfter19 ? 'Diario disponibile dalle 19:00' : state.journalWritten ? 'Modifica il diario di stasera' : 'Apri il diario di stasera'}
+            style={{marginTop: 22, padding: '18px 20px', fontSize: 16, fontFamily: 'Instrument Serif, serif', fontWeight: 400, letterSpacing: 0.3, opacity: checkinOpen ? 1 : 0.45, cursor: checkinOpen ? 'pointer' : 'default'}}>
+            {!checkinOpen ? 'Diario disponibile dalle 19:00' : state.journalWritten ? 'Modifica il diario di stasera' : 'Apri il diario di stasera'}
           </button>
           <div className="annot" style={{textAlign:'center', marginTop:8, fontSize:14}}>
-            {!isAfter19 ? `ora è ${timeStr} · torna stasera` : state.journalWritten ? `${timeStr} · già compilato` : `${timeStr} · ti aspetta`}
+            {!checkinOpen ? `ora è ${timeStr} · torna stasera` : state.journalWritten ? `${timeStr} · già compilato` : `${timeStr} · ti aspetta`}
           </div>
         </div>
       </div>
@@ -484,8 +505,7 @@ function CheckinDone({ go, state, setState }) {
   const anyOver = overSmoke || overDrink || overBet;
 
   React.useEffect(() => {
-    const today = new Date();
-    const dateKey = today.toISOString().slice(0,10);
+    const dateKey = logicalDateKey();
     let entries = [];
     try { entries = JSON.parse(localStorage.getItem('entries') || '[]'); } catch {}
     const newEntry = { date: dateKey, smoke: snap.smoke, drink: snap.drink, bet: snap.bet, pac: snap.pac };
@@ -869,23 +889,107 @@ function DayRow({ entry, limits, isLast }) {
   );
 }
 
+// ── PAST MONTH CARD (archivio) ──
+function PastMonthCard({ monthKey, entries, limits }) {
+  const [open, setOpen] = useState(false);
+  const MN = ['gennaio','febbraio','marzo','aprile','maggio','giugno','luglio','agosto','settembre','ottobre','novembre','dicembre'];
+  const [y, m] = monthKey.split('-');
+  const label = `${MN[parseInt(m,10)-1]} ${y}`;
+  const daysInMonth = new Date(parseInt(y), parseInt(m), 0).getDate();
+
+  const totalSmoke = entries.reduce((s,e) => s+(e.smoke||0), 0);
+  const totalDrink = entries.reduce((s,e) => s+(e.drink||0), 0);
+  const totalBet   = entries.reduce((s,e) => s+(e.bet||0), 0);
+  const pacDone    = entries.some(e => e.pac === true);
+  const daysOk     = entries.filter(e => (e.smoke||0)<=limits.smoke && (e.drink||0)<=limits.drink && (e.bet||0)<=limits.bet).length;
+  const daysOverSmoke = entries.filter(e => (e.smoke||0) > limits.smoke).length;
+  const daysOverDrink = entries.filter(e => (e.drink||0) > limits.drink).length;
+  const daysOverBet   = entries.filter(e => (e.bet||0)   > limits.bet).length;
+
+  // Build dot array: one per calendar day
+  const entryByDay = {};
+  entries.forEach(e => { entryByDay[e.date] = e; });
+  const dots = Array.from({length: daysInMonth}, (_, i) => {
+    const ds = `${y}-${m}-${String(i+1).padStart(2,'0')}`;
+    const en = entryByDay[ds];
+    if (!en) return 'miss';
+    return (en.smoke||0)<=limits.smoke && (en.drink||0)<=limits.drink && (en.bet||0)<=limits.bet ? 'ok' : 'over';
+  });
+
+  return (
+    <div style={{border:'1px solid var(--paper-edge)', borderRadius:18, overflow:'hidden', marginBottom:10}}>
+      <div onClick={() => setOpen(o => !o)} style={{padding:'16px 18px', cursor:'pointer', display:'flex', alignItems:'center', gap:10}}>
+        <div style={{flex:1}}>
+          <div style={{fontSize:15, fontWeight:600, textTransform:'capitalize'}}>{label}</div>
+          <div style={{fontSize:12, color:'var(--ink-mute)', marginTop:2}}>
+            {entries.length}/{daysInMonth} giorni · {daysOk} ok · {entries.length - daysOk} sforati
+          </div>
+        </div>
+        {pacDone && <div className="chip" style={{background:'var(--pac)', color:'var(--paper)', fontSize:10, padding:'3px 8px'}}><I.Check s={10}/> PAC</div>}
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ink-mute)" strokeWidth="2" strokeLinecap="round" style={{transform: open ? 'rotate(90deg)' : 'none', transition:'transform 0.2s'}}><polyline points="9 6 15 12 9 18"/></svg>
+      </div>
+
+      {open && (
+        <div style={{borderTop:'1px solid var(--paper-edge)', padding:'16px 18px 18px'}}>
+          {/* Dot chart */}
+          <div className="label-tiny" style={{marginBottom:8}}>MAPPA DEL MESE</div>
+          <div style={{display:'flex', flexWrap:'wrap', gap:4}}>
+            {dots.map((d, i) => (
+              <div key={i} title={`${i+1}`} style={{
+                width:11, height:11, borderRadius:3,
+                background: d==='ok' ? 'var(--pac)' : d==='over' ? 'var(--smoke)' : 'var(--paper-edge)',
+              }}/>
+            ))}
+          </div>
+          <div style={{display:'flex', gap:14, marginTop:8, fontSize:11, color:'var(--ink-mute)'}}>
+            <span style={{display:'flex',alignItems:'center',gap:4}}><span style={{width:8,height:8,borderRadius:2,background:'var(--pac)',display:'inline-block'}}/> in limite</span>
+            <span style={{display:'flex',alignItems:'center',gap:4}}><span style={{width:8,height:8,borderRadius:2,background:'var(--smoke)',display:'inline-block'}}/> sforato</span>
+            <span style={{display:'flex',alignItems:'center',gap:4}}><span style={{width:8,height:8,borderRadius:2,background:'var(--paper-edge)',display:'inline-block'}}/> non tracciato</span>
+          </div>
+
+          {/* Testo recap */}
+          <div style={{marginTop:16, padding:'14px 16px', background:'var(--paper-2)', borderRadius:14, fontSize:13, color:'var(--ink-3)', lineHeight:1.8}}>
+            <div>🚬 {totalSmoke} sigarette{daysOverSmoke>0 ? ` · ${daysOverSmoke} giorni oltre limite` : ' · sempre nel limite'}</div>
+            <div>🍷 {totalDrink} unità alcol{daysOverDrink>0 ? ` · ${daysOverDrink} giorni oltre limite` : ' · sempre nel limite'}</div>
+            <div>🎲 €{totalBet} gioco{limits.bet===0 && totalBet===0 ? ' · zero assoluto ✓' : daysOverBet>0 ? ` · ${daysOverBet} giorni oltre limite` : ' · nel limite'}</div>
+            <div>💳 PAC {pacDone ? 'versato ✓' : 'non confermato'}</div>
+          </div>
+
+          {/* Righe giornaliere */}
+          <div className="label-tiny" style={{marginTop:16, marginBottom:4}}>GIORNALIERO</div>
+          <div style={{borderRadius:14, border:'1px solid var(--paper-edge)', padding:'0 12px'}}>
+            {entries.slice().sort((a,b) => b.date.localeCompare(a.date)).map((entry, i, arr) => (
+              <DayRow key={entry.date} entry={entry} limits={limits} isLast={i===arr.length-1}/>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── STATS ──
 function Stats({ go, state }) {
   const entries = (() => {
     try { return JSON.parse(localStorage.getItem('entries') || '[]'); } catch { return []; }
   })();
-
   const limits = state.limits || { smoke: 5, drink: 3, bet: 0 };
+  const MN = ['gennaio','febbraio','marzo','aprile','maggio','giugno','luglio','agosto','settembre','ottobre','novembre','dicembre'];
 
-  // Group by month descending
+  const currentMonthKey = logicalDateKey().slice(0, 7);
+
   const byMonth = {};
   entries.forEach(e => {
     const mk = e.date.slice(0, 7);
     (byMonth[mk] = byMonth[mk] || []).push(e);
   });
-  const months = Object.keys(byMonth).sort().reverse();
 
+  const currentEntries = (byMonth[currentMonthKey] || []).slice().sort((a,b) => b.date.localeCompare(a.date));
+  const pastMonthKeys = Object.keys(byMonth).filter(mk => mk < currentMonthKey).sort().reverse();
   const empty = entries.length === 0;
+
+  const [y, m] = currentMonthKey.split('-');
+  const currentMonthLabel = `${MN[parseInt(m,10)-1].toUpperCase()} ${y}`;
 
   return (
     <div className="screen-body screen-enter">
@@ -897,26 +1001,36 @@ function Stats({ go, state }) {
             <div className="serif-it" style={{fontSize:16, color:'var(--ink-mute)', marginTop:14, lineHeight:1.5}}>
               La storia si scrive una sera alla volta. Fai il primo check-in stasera.
             </div>
-            {new Date().getHours() >= 19
+            {isCheckinOpen()
               ? <button onClick={() => go('checkin-intro')} className="btn btn-primary" style={{marginTop:24, padding:'12px 22px', fontFamily:'Instrument Serif', fontSize:16}}>apri il diario →</button>
               : <div className="annot" style={{marginTop:20, fontSize:14}}>disponibile dalle 19:00</div>
             }
           </div>
         ) : (
           <>
-            {/* Riepilogo mensile */}
-            <div className="kicker" style={{marginTop:10, marginBottom:10}}>RIEPILOGO MENSILE</div>
-            {months.map(mk => (
-              <MonthSummary key={mk} monthKey={mk} entries={byMonth[mk]} limits={limits}/>
-            ))}
+            {/* Mese corrente */}
+            <div className="kicker" style={{marginTop:10, marginBottom:10}}>{currentMonthLabel} · IN CORSO</div>
+            <MonthSummary monthKey={currentMonthKey} entries={currentEntries} limits={limits}/>
 
-            {/* Giornaliero */}
-            <div className="kicker" style={{marginTop:20, marginBottom:4}}>GIORNALIERO</div>
+            <div className="kicker" style={{marginTop:18, marginBottom:4}}>GIORNALIERO</div>
             <div style={{background:'var(--paper)', border:'1px solid var(--paper-edge)', borderRadius:18, padding:'0 16px'}}>
-              {entries.slice().sort((a,b) => b.date.localeCompare(a.date)).map((entry, i, arr) => (
-                <DayRow key={entry.date} entry={entry} limits={limits} isLast={i === arr.length - 1}/>
-              ))}
+              {currentEntries.length === 0
+                ? <div className="serif-it" style={{padding:'20px 0', textAlign:'center', color:'var(--ink-mute)', fontSize:15}}>nessun check-in questo mese ancora</div>
+                : currentEntries.map((entry, i, arr) => (
+                    <DayRow key={entry.date} entry={entry} limits={limits} isLast={i===arr.length-1}/>
+                  ))
+              }
             </div>
+
+            {/* Archivio mesi precedenti */}
+            {pastMonthKeys.length > 0 && (
+              <>
+                <div className="kicker" style={{marginTop:24, marginBottom:10}}>ARCHIVIO</div>
+                {pastMonthKeys.map(mk => (
+                  <PastMonthCard key={mk} monthKey={mk} entries={byMonth[mk]} limits={limits}/>
+                ))}
+              </>
+            )}
           </>
         )}
       </div>
@@ -1525,8 +1639,8 @@ function EntryDetail({ go, state }) {
   const limits = (state && state.limits) || { smoke: 5, drink: 3, bet: 0 };
   const dayNames = ['Domenica','Lunedì','Martedì','Mercoledì','Giovedì','Venerdì','Sabato'];
   const monthNames = ['gennaio','febbraio','marzo','aprile','maggio','giugno','luglio','agosto','settembre','ottobre','novembre','dicembre'];
-  const isAfter19 = new Date().getHours() >= 19;
-  const todayKey = new Date().toISOString().slice(0, 10);
+  const checkinOpen = isCheckinOpen();
+  const todayKey = logicalDateKey();
 
   if (entries.length === 0) {
     return (
@@ -1593,7 +1707,7 @@ function EntryDetail({ go, state }) {
           </div>
         </div>
 
-        {isToday && isAfter19 && (
+        {isToday && checkinOpen && (
           <button onClick={() => go('checkin-intro')} style={{
             marginTop:18, width:'100%', padding:'12px 16px',
             background:'transparent', border:'1.5px solid var(--paper-edge)',
