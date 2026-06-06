@@ -260,11 +260,11 @@ function markEggSeen(id) {
 // ═══════════════════════════════════════════════════
 // STATE
 // ═══════════════════════════════════════════════════
-// Check-in window: 19:00 → 03:00 (next calendar day)
-// Between 00:00 and 02:59 the "logical day" is still yesterday
+// Check-in window: 19:00 → 10:00 (next calendar day)
+// Between 00:00 and 09:59 the "logical day" is still yesterday
 function logicalDateKey() {
   const now = new Date();
-  if (now.getHours() < 3) {
+  if (now.getHours() < 10) {
     const d = new Date(now);
     d.setDate(d.getDate() - 1);
     return d.toISOString().slice(0, 10);
@@ -273,7 +273,7 @@ function logicalDateKey() {
 }
 function isCheckinOpen() {
   const h = new Date().getHours();
-  return h >= 19 || h < 3;
+  return h >= 19 || h < 10;
 }
 
 function loadInitial() {
@@ -435,6 +435,18 @@ function Home({ go, state }) {
           <div className="annot" style={{textAlign:'center', marginTop:8, fontSize:14}}>
             {!checkinOpen ? `ora è ${timeStr} · torna stasera` : state.journalWritten ? `${timeStr} · già compilato` : `${timeStr} · ti aspetta`}
           </div>
+          <button
+            onClick={() => go('retro-picker')}
+            style={{
+              marginTop:12, width:'100%', padding:'8px 16px',
+              background:'transparent', border:'none',
+              fontSize:13, color:'var(--ink-mute)', cursor:'pointer',
+              fontFamily:'Inter', fontWeight:500,
+              display:'flex', alignItems:'center', justifyContent:'center', gap:6,
+            }}>
+            <I.Plus s={12}/>
+            aggiungi giorno precedente
+          </button>
         </div>
       </div>
 
@@ -1877,6 +1889,173 @@ function StreakBadge({ Icon, color, bg, n }) {
   );
 }
 
+// ── RETRO PICKER ──
+function RetroPicker({ go, setRetroDate }) {
+  const entries = (() => {
+    try { return JSON.parse(localStorage.getItem('entries') || '[]'); } catch { return []; }
+  })();
+  const entryDates = new Set(entries.map(e => e.date));
+  const todayKey = logicalDateKey();
+
+  const missed = [];
+  for (let i = 1; i <= 30 && missed.length < 7; i++) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    const key = d.toISOString().slice(0, 10);
+    if (!entryDates.has(key)) missed.push(key);
+  }
+
+  const dayNames = ['dom','lun','mar','mer','gio','ven','sab'];
+  const monthShort = ['gen','feb','mar','apr','mag','giu','lug','ago','set','ott','nov','dic'];
+
+  return (
+    <div className="screen-body screen-enter">
+      <TopBar go={go} back="home" title="Giorno mancante"/>
+      <div className="screen-scroll" style={{padding:'16px 24px 24px'}}>
+        {missed.length === 0 ? (
+          <div style={{padding:'40px 0', textAlign:'center'}}>
+            <div className="serif" style={{fontSize:22}}>Tutti i giorni recenti<br/>sono già registrati.</div>
+          </div>
+        ) : (
+          <>
+            <div className="serif-it" style={{fontSize:15, color:'var(--ink-mute)', marginBottom:18, lineHeight:1.4}}>
+              Scegli un giorno da registrare in ritardo.
+            </div>
+            {missed.map(dateKey => {
+              const d = new Date(dateKey + 'T12:00:00');
+              const dow = dayNames[d.getDay()];
+              const label = `${d.getDate()} ${monthShort[d.getMonth()]}`;
+              const daysAgo = Math.round((new Date(todayKey + 'T12:00:00') - d) / 86400000);
+              return (
+                <div key={dateKey} onClick={() => { setRetroDate(dateKey); go('retro-checkin'); }} style={{
+                  display:'flex', alignItems:'center', gap:14, padding:'14px 16px',
+                  marginBottom:8, background:'var(--paper-2)', borderRadius:16,
+                  border:'1px solid var(--paper-edge)', cursor:'pointer',
+                }}>
+                  <div style={{width:40, textAlign:'center'}}>
+                    <div style={{fontSize:10, color:'var(--ink-faint)', fontFamily:'JetBrains Mono', textTransform:'uppercase'}}>{dow}</div>
+                    <div style={{fontSize:20, fontWeight:600, lineHeight:1.2}}>{d.getDate()}</div>
+                  </div>
+                  <div style={{flex:1}}>
+                    <div className="serif" style={{fontSize:17}}>{label}</div>
+                    <div style={{fontSize:12, color:'var(--ink-mute)', marginTop:2}}>
+                      {daysAgo === 1 ? 'ieri' : `${daysAgo} giorni fa`} · nessun rapporto
+                    </div>
+                  </div>
+                  <I.Chev s={14} c="var(--ink-mute)"/>
+                </div>
+              );
+            })}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── RETRO CHECK-IN ──
+function RetroCheckin({ go, state, retroDate, setRetroDate }) {
+  const [vals, setVals] = useState({ smoke: 0, drink: 0 });
+  const [betInput, setBetInput] = useState('');
+  const [pac, setPac] = useState(false);
+  const limits = state.limits || { smoke: 5, drink: 3, bet: 0 };
+
+  if (!retroDate) { go('retro-picker'); return null; }
+
+  const d = new Date(retroDate + 'T12:00:00');
+  const monthNames = ['gennaio','febbraio','marzo','aprile','maggio','giugno','luglio','agosto','settembre','ottobre','novembre','dicembre'];
+  const dayNames = ['Domenica','Lunedì','Martedì','Mercoledì','Giovedì','Venerdì','Sabato'];
+  const dayLabel = `${d.getDate()} ${monthNames[d.getMonth()]}`;
+  const dowLabel = dayNames[d.getDay()].toUpperCase();
+  const monthLabel = monthNames[d.getMonth()];
+
+  const save = () => {
+    const bet = parseFloat(betInput) || 0;
+    const entry = { date: retroDate, smoke: vals.smoke, drink: vals.drink, bet, pac };
+    let entries = [];
+    try { entries = JSON.parse(localStorage.getItem('entries') || '[]'); } catch {}
+    const idx = entries.findIndex(e => e.date === retroDate);
+    if (idx >= 0) entries[idx] = entry;
+    else { entries.push(entry); entries.sort((a, b) => b.date.localeCompare(a.date)); }
+    try { localStorage.setItem('entries', JSON.stringify(entries.slice(0, 365))); } catch {}
+    setRetroDate(null);
+    go('stats');
+  };
+
+  const counterRow = (label, Icon, color, bg, key, max) => {
+    const v = vals[key];
+    const over = v > limits[key];
+    return (
+      <div style={{display:'flex', alignItems:'center', gap:12, padding:'12px 14px', background:'#fff', borderRadius:14, border:'1px solid var(--paper-edge)', marginBottom:10}}>
+        <div style={{width:36, height:36, borderRadius:10, background:bg, display:'flex', alignItems:'center', justifyContent:'center'}}>
+          <Icon s={18} c={color}/>
+        </div>
+        <div style={{flex:1}}>
+          <div style={{fontSize:14, fontWeight:600}}>{label}</div>
+          <div style={{fontSize:11, color:'var(--ink-mute)', marginTop:1}}>limite {limits[key]}</div>
+        </div>
+        <div style={{display:'flex', alignItems:'center', gap:10}}>
+          <button onClick={() => setVals(p => ({...p, [key]: Math.max(0, v - 1)}))} style={{width:30, height:30, borderRadius:8, border:'1px solid var(--paper-edge)', background:'var(--paper-2)', fontSize:18, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', lineHeight:1}}>−</button>
+          <div className="serif" style={{fontSize:24, minWidth:32, textAlign:'center', color: over ? color : 'var(--ink)'}}>{v}</div>
+          <button onClick={() => setVals(p => ({...p, [key]: Math.min(max, v + 1)}))} style={{width:30, height:30, borderRadius:8, border:'1px solid var(--paper-edge)', background:'var(--paper-2)', fontSize:18, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', lineHeight:1}}>+</button>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="screen-body screen-enter">
+      <TopBar go={go} back="retro-picker" title={dayLabel}/>
+      <div className="screen-scroll" style={{padding:'16px 24px 24px'}}>
+        <div className="kicker">{dowLabel}</div>
+        <div className="serif" style={{fontSize:26, lineHeight:1.1, marginTop:4, marginBottom:24}}>
+          Rapporto<br/>in ritardo.
+        </div>
+
+        {counterRow('Sigarette', I.Cig, 'var(--smoke)', 'var(--smoke-bg)', 'smoke', 40)}
+        {counterRow('Alcol (unità)', I.Glass, 'var(--drink)', 'var(--drink-bg)', 'drink', 20)}
+
+        {/* Bet */}
+        <div style={{display:'flex', alignItems:'center', gap:12, padding:'12px 14px', background:'#fff', borderRadius:14, border:'1px solid var(--paper-edge)', marginBottom:10}}>
+          <div style={{width:36, height:36, borderRadius:10, background:'var(--bet-bg)', display:'flex', alignItems:'center', justifyContent:'center'}}>
+            <I.Dice s={18} c="var(--bet)"/>
+          </div>
+          <div style={{flex:1}}>
+            <div style={{fontSize:14, fontWeight:600}}>Gioco</div>
+            <div style={{fontSize:11, color:'var(--ink-mute)', marginTop:1}}>limite {limits.bet} €</div>
+          </div>
+          <div style={{display:'flex', alignItems:'center', gap:6}}>
+            <span className="serif" style={{fontSize:18, color:'var(--bet)'}}>€</span>
+            <input type="number" inputMode="decimal" min="0" step="any" value={betInput}
+              onChange={e => setBetInput(e.target.value)} placeholder="0"
+              style={{fontSize:22, fontFamily:'Instrument Serif, serif', width:70, border:'none', borderBottom:'1.5px solid var(--bet)', background:'transparent', color:'var(--ink)', outline:'none', textAlign:'center', padding:'2px 0', WebkitAppearance:'none', MozAppearance:'textfield'}}/>
+          </div>
+        </div>
+
+        {/* PAC */}
+        <div onClick={() => setPac(p => !p)} style={{display:'flex', alignItems:'center', gap:12, padding:'12px 14px', background: pac ? 'var(--pac-bg)' : '#fff', borderRadius:14, border:`1.5px solid ${pac ? 'var(--pac)' : 'var(--paper-edge)'}`, cursor:'pointer', marginBottom:10}}>
+          <div style={{width:36, height:36, borderRadius:10, background: pac ? 'var(--pac)' : 'var(--paper-edge)', display:'flex', alignItems:'center', justifyContent:'center'}}>
+            <I.Coin s={18} c={pac ? 'var(--paper)' : 'var(--ink-mute)'}/>
+          </div>
+          <div style={{flex:1}}>
+            <div style={{fontSize:14, fontWeight:600}}>PAC {monthLabel}</div>
+            <div style={{fontSize:11, color:'var(--ink-mute)', marginTop:1}}>200 € / mese</div>
+          </div>
+          <div style={{fontSize:13, fontWeight:600, color: pac ? 'var(--pac)' : 'var(--ink-mute)'}}>
+            {pac ? '✓ versato' : 'non versato'}
+          </div>
+        </div>
+      </div>
+
+      <div style={{padding:'0 24px 20px'}}>
+        <button onClick={save} className="btn btn-primary btn-block" style={{padding:'16px', fontFamily:'Instrument Serif, serif', fontSize:17, fontWeight:400}}>
+          Salva rapporto
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── ENTRY DETAIL (navigable diary) ──
 function EntryDetail({ go, state }) {
   const entries = (() => {
@@ -2150,6 +2329,7 @@ function App() {
     } catch { return 'home'; }
   });
   const [state, setStateRaw] = useState(initial);
+  const [retroDate, setRetroDate] = useState(null);
   const setState = (u) => setStateRaw(prev => {
     const next = typeof u === 'function' ? u(prev) : u;
     try { localStorage.setItem('app-state', JSON.stringify(next)); } catch {}
@@ -2164,6 +2344,7 @@ function App() {
     ['checkin-done', 'Riepilogo'], ['sgarro', 'Sgarro'],
     ['savings', 'Risparmi'], ['stats', 'Storia'], ['settings', 'Il patto'],
     ['widget', 'Widget iOS'], ['detail-entry', 'Dettaglio'],
+    ['retro-picker', 'Giorno mancante'], ['retro-checkin', 'Retro check-in'],
   ];
 
   const go = (s) => {
@@ -2187,6 +2368,8 @@ function App() {
   else if (screen === 'settings') content = <Settings go={go} state={state} setState={setState}/>;
   else if (screen === 'widget') content = <Widget go={go} state={state}/>;
   else if (screen === 'detail-entry') content = <EntryDetail go={go} state={state}/>;
+  else if (screen === 'retro-picker') content = <RetroPicker go={go} setRetroDate={setRetroDate}/>;
+  else if (screen === 'retro-checkin') content = <RetroCheckin go={go} state={state} retroDate={retroDate} setRetroDate={setRetroDate}/>;
   else content = <Home go={go} state={state}/>;
 
   if (pwa) {
